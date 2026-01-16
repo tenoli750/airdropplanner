@@ -13,6 +13,10 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
@@ -29,7 +33,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^25.0.8",
+    "@types/node": "^25.0.0",
     "@types/node-cron": "^3.0.11",
     "@types/node-telegram-bot-api": "^0.64.13",
     "@types/pg": "^8.16.0",
