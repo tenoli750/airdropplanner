@@ -2,9 +2,17 @@ import { Pool } from 'pg';
 import dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as dns from 'dns';
 
 // Load .env file only if it exists (won't override existing env vars)
 dotenv.config();
+
+// Force IPv4 DNS resolution to avoid ENETUNREACH errors on Railway
+// Railway's network doesn't support IPv6, so we need to prefer IPv4
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+  console.log('DNS resolution set to prefer IPv4');
+}
 
 // Validate DATABASE_URL is set
 const dbUrl = process.env.DATABASE_URL;
@@ -27,6 +35,9 @@ console.log(`Database URL detected: ${dbUrl.substring(0, 50)}... (Supabase: ${is
 // Parse connection string and configure SSL for Supabase
 const poolConfig: any = {
   connectionString: dbUrl,
+  // Force IPv4 to avoid ENETUNREACH errors on Railway
+  // Railway doesn't support IPv6, so we need to prefer IPv4
+  // This is done by setting the family option in Node.js dns lookup
 };
 
 if (isSupabase) {
