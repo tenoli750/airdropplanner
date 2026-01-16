@@ -1,0 +1,20 @@
+# Exclude frontend from Railway uploads
+frontend/
+!backend/
+
+# Exclude common large files
+node_modules/
+*.log
+.DS_Store
+.vscode/
+.idea/
+*.pid
+*.seed
+*.lock
+dist/
+build/
+
+# Git files (Railway clones from Git anyway)
+.git/
+.gitignore
+
