@@ -3,23 +3,30 @@ import dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// Load .env file only if it exists (won't override existing env vars)
 dotenv.config();
 
+// Validate DATABASE_URL is set
+const dbUrl = process.env.DATABASE_URL;
+
+if (!dbUrl) {
+  console.error('❌ DATABASE_URL environment variable is not set!');
+  console.error('   Please set DATABASE_URL in your environment variables or .env file');
+  throw new Error('DATABASE_URL is required');
+}
+
 // Check if using Supabase (connection string contains 'supabase' or 'pooler.supabase')
-const dbUrl = process.env.DATABASE_URL || '';
 const isSupabase = dbUrl.includes('supabase') || 
                    dbUrl.includes('pooler.supabase') ||
                    dbUrl.includes('dfwcemqhritblsvoicem');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-if (dbUrl) {
-  console.log(`Database URL detected: ${dbUrl.substring(0, 50)}... (Supabase: ${isSupabase}, Production: ${isProduction})`);
-}
+console.log(`Database URL detected: ${dbUrl.substring(0, 50)}... (Supabase: ${isSupabase}, Production: ${isProduction})`);
 
 // Parse connection string and configure SSL for Supabase
 const poolConfig: any = {
-  connectionString: process.env.DATABASE_URL,
+  connectionString: dbUrl,
 };
 
 if (isSupabase) {
