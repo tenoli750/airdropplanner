@@ -1368,14 +1368,11 @@ export const initTelegramBot = (token: string): TelegramBot => {
           );
 
           // Send notification with buttons below the copied message
-          const websiteUrl = process.env.WEBSITE_URL;
-          const buttons: any[] = [
-            { text: '📋 플랜에 추가', callback_data: `addplan:${task.id}` }
+          const websiteUrl = process.env.FRONTEND_URL || process.env.WEBSITE_URL || 'https://phplanner.vercel.app';
+          const buttons: any[][] = [
+            [{ text: '📋 플랜에 추가', callback_data: `addplan:${task.id}` }],
+            [{ text: '🌐 웹사이트', url: websiteUrl }]
           ];
-          // Only add website button if valid HTTPS URL is configured
-          if (websiteUrl && websiteUrl.startsWith('https://')) {
-            buttons.push({ text: '🌐 웹사이트', url: websiteUrl });
-          }
           await bot?.sendMessage(
             WEB3_TOPIC_CHAT_ID,
             `✅ *태스크로 추가됨*\n\n${emoji} ${task.title}`,
@@ -1383,7 +1380,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
               parse_mode: 'Markdown',
               message_thread_id: WEB3_TOPIC_THREAD_ID,
               reply_markup: {
-                inline_keyboard: [buttons]
+                inline_keyboard: buttons
               }
             } as any
           );
