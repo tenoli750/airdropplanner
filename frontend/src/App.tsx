@@ -251,13 +251,6 @@ function AppContent() {
                 <span></span>
               </button>
             )}
-
-            {/* Login button for non-authenticated users */}
-            {!isAuthenticated && (
-              <NavLink to="/login" className="btn-primary text-xs sm:text-sm px-3 sm:px-4 py-1.5 sm:py-2 flex-shrink-0 whitespace-nowrap">
-                로그인
-              </NavLink>
-            )}
           </div>
         </div>
       </nav>
@@ -284,7 +277,7 @@ function AppContent() {
           />
           <Route
             path="/"
-            element={<ArticlesPage />}
+            element={isAuthenticated ? <ArticlesPage /> : <Navigate to="/login" />}
           />
           <Route
             path="/plan"
