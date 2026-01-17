@@ -116,7 +116,6 @@ export default function LeaderboardPage() {
 
   // Top 3 users for podium display
   const topThree = leaderboard.slice(0, 3);
-  const restOfLeaderboard = leaderboard.slice(3);
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">

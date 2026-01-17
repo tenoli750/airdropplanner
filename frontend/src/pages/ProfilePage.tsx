@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { authApi, alarmApi } from '../services/api';
-import type { User } from '../services/api';
+import type { User } from '../types';
 
 interface ProfilePageProps {
   user: User | null;
@@ -23,7 +23,7 @@ const ProfilePage = ({ user, onUserUpdate }: ProfilePageProps) => {
     // Refresh user data
     const fetchUser = async () => {
       try {
-        const userData = await authApi.getMe();
+        const userData = await authApi.getProfile();
         onUserUpdate(userData);
       } catch (err) {
         console.error('Failed to fetch user:', err);
@@ -37,7 +37,7 @@ const ProfilePage = ({ user, onUserUpdate }: ProfilePageProps) => {
     const fetchAlarmSettings = async () => {
       try {
         const settings = await alarmApi.getSettings();
-        setAlarmEnabled(settings.enabled);
+        setAlarmEnabled(settings.alarm_enabled);
         setAlarmTime(settings.alarm_time);
       } catch (err) {
         console.error('Failed to fetch alarm settings:', err);
@@ -52,7 +52,7 @@ const ProfilePage = ({ user, onUserUpdate }: ProfilePageProps) => {
     setAlarmLoading(true);
     try {
       await alarmApi.updateSettings({
-        enabled: alarmEnabled,
+        alarm_enabled: alarmEnabled,
         alarm_time: alarmTime,
         timezone: 'Asia/Seoul',
       });
@@ -69,7 +69,7 @@ const ProfilePage = ({ user, onUserUpdate }: ProfilePageProps) => {
     setLoading(true);
     setError('');
     try {
-      const response = await authApi.generateTelegramCode();
+      const response = await authApi.generateTelegramLinkCode();
       setLinkCode(response.code);
       setCodeExpiry(new Date(response.expiresAt));
     } catch (err: any) {
@@ -86,7 +86,7 @@ const ProfilePage = ({ user, onUserUpdate }: ProfilePageProps) => {
     setError('');
     try {
       await authApi.unlinkTelegram();
-      const userData = await authApi.getMe();
+      const userData = await authApi.getProfile();
       onUserUpdate(userData);
       setLinkCode(null);
     } catch (err: any) {

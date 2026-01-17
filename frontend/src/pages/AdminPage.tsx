@@ -128,8 +128,9 @@ const AdminPage = () => {
   };
 
   const handleCreateTask = async () => {
+    if (!taskForm.article_id) return;
     try {
-      await adminApi.createTask(taskForm);
+      await adminApi.createTask(taskForm.article_id, taskForm);
       await fetchArticles();
       closeModal();
     } catch (err) {

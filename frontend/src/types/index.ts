@@ -1,5 +1,13 @@
 export type TaskFrequency = 'daily' | 'weekly' | 'one-time';
 
+export interface User {
+  id: string;
+  username: string;
+  isAdmin: boolean;
+  telegramLinked?: boolean;
+  telegramUsername?: string;
+}
+
 export interface Task {
   id: string;
   article_id: string;

@@ -1,0 +1,14 @@
+Railway Production Environment Variables
+========================================
+
+Copy and paste these into Railway Dashboard → Variables:
+
+DATABASE_URL=postgresql://postgres:rnjswoghd1%21@db.dfwcemqhritblsvoicem.supabase.co:5432/postgres
+JWT_SECRET=99dd573f-092d-4ed6-a749-6cc48651046f
+NODE_ENV=production
+NODE_TLS_REJECT_UNAUTHORIZED=0
+PORT=3001
+
+Optional (add later):
+TELEGRAM_BOT_TOKEN=your-token
+FRONTEND_URL=https://your-frontend.vercel.app

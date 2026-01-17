@@ -9,7 +9,7 @@ interface CoinCardProps {
 }
 
 export default function CoinCard({ coin, selected, onClick, disabled, isWinner }: CoinCardProps) {
-  const change = coin.current_change ?? coin.percent_change ?? 0;
+  const change = coin.live_change ?? coin.percent_change ?? 0;
   const isPositive = change >= 0;
 
   return (

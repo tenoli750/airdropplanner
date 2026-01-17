@@ -10,7 +10,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProfilePage from './pages/ProfilePage';
 import { authApi } from './services/api';
-import type { User } from './services/api';
+import type { User } from './types';
 
 // Bottom Navigation Component
 function BottomNav() {
