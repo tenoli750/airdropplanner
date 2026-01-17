@@ -17,28 +17,17 @@ if (!dbUrl) {
 }
 
 // Force IPv4 DNS resolution to avoid ENETUNREACH errors on Railway
-// Railway's network doesn't support IPv6, so we need to resolve to IPv4 explicitly
-let resolvedDbUrl = dbUrl;
-try {
-  const url = new URL(dbUrl);
-  const hostname = url.hostname;
-  
-  // Use dns.lookup with IPv4 family to get IPv4 address
-  const ipv4Address = dns.lookupSync(hostname, { family: 4 });
-  
-  if (ipv4Address && typeof ipv4Address === 'string') {
-    // Replace hostname with IPv4 address in connection string
-    resolvedDbUrl = dbUrl.replace(hostname, ipv4Address);
-    console.log(`✅ Resolved ${hostname} to IPv4: ${ipv4Address}`);
-  }
-} catch (error) {
-  console.warn(`⚠️  DNS resolution failed: ${error}, using original connection string`);
-  // Fallback: Try setting default result order
-  if (dns.setDefaultResultOrder) {
-    dns.setDefaultResultOrder('ipv4first');
-    console.log('DNS resolution set to prefer IPv4 (fallback)');
-  }
+// Railway's network doesn't support IPv6, so we need to prefer IPv4
+// Use setDefaultResultOrder to make DNS lookups prefer IPv4 (Node.js 17+)
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+  console.log('DNS resolution set to prefer IPv4');
+} else {
+  console.warn('⚠️  Node.js version does not support setDefaultResultOrder, may encounter IPv6 issues on Railway');
 }
+
+// Use original connection string - DNS resolution will prefer IPv4 due to setDefaultResultOrder above
+const resolvedDbUrl = dbUrl;
 
 // Check if using Supabase (connection string contains 'supabase' or 'pooler.supabase')
 const isSupabase = dbUrl.includes('supabase') || 
