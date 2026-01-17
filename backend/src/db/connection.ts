@@ -57,14 +57,30 @@ if (isSupabase) {
       };
       console.log(`Supabase SSL configured for production: Using CA certificate from ${certPath}`);
     } else {
-      // Fallback: Use system CA certificates (works if Supabase cert is in system trust store)
-      poolConfig.ssl = {
-        rejectUnauthorized: true,
-      };
-      console.warn(`⚠️  Supabase CA certificate not found at ${certPath}`);
-      console.warn('   Using system CA certificates. For better security, download the certificate from:');
-      console.warn('   https://supabase.com/dashboard/project/dfwcemqhritblsvoicem/settings/database');
-      console.warn('   And set SUPABASE_SSL_CERT_PATH environment variable.');
+      // Check if NODE_TLS_REJECT_UNAUTHORIZED is set to '0' (allow self-signed certs)
+      const tlsRejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+      const allowSelfSigned = tlsRejectUnauthorized === '0' || tlsRejectUnauthorized === 'false';
+      
+      if (allowSelfSigned) {
+        // Fallback: Allow self-signed certificates if explicitly configured
+        poolConfig.ssl = {
+          rejectUnauthorized: false,
+        };
+        console.warn(`⚠️  Supabase CA certificate not found at ${certPath}`);
+        console.warn('   NODE_TLS_REJECT_UNAUTHORIZED=0 is set, allowing self-signed certificates');
+        console.warn('   For better security, download the certificate from:');
+        console.warn('   https://supabase.com/dashboard/project/dfwcemqhritblsvoicem/settings/database');
+        console.warn('   And set SUPABASE_SSL_CERT_PATH environment variable.');
+      } else {
+        // Try system CA certificates (works if Supabase cert is in system trust store)
+        poolConfig.ssl = {
+          rejectUnauthorized: true,
+        };
+        console.warn(`⚠️  Supabase CA certificate not found at ${certPath}`);
+        console.warn('   Using system CA certificates. For better security, download the certificate from:');
+        console.warn('   https://supabase.com/dashboard/project/dfwcemqhritblsvoicem/settings/database');
+        console.warn('   Or set NODE_TLS_REJECT_UNAUTHORIZED=0 to allow self-signed certificates.');
+      }
     }
   } else {
     // Development: Allow self-signed certificates
