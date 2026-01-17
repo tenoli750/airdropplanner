@@ -22,7 +22,26 @@ interface UserState {
 }
 
 const userStates = new Map<number, UserState>();
-const processedMessages = new Set<number>();
+
+// Initialize processed messages table (for multi-instance deduplication)
+const initProcessedMessagesTable = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS telegram_processed_messages (
+        message_id BIGINT PRIMARY KEY,
+        processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_processed_messages_at ON telegram_processed_messages(processed_at);
+    `);
+    // Clean up old entries (older than 24 hours)
+    await pool.query(`
+      DELETE FROM telegram_processed_messages 
+      WHERE processed_at < NOW() - INTERVAL '24 hours'
+    `);
+  } catch (error) {
+    console.error('Error initializing processed messages table:', error);
+  }
+};
 
 // Helper to delete multiple messages
 const deleteMessages = (bot: TelegramBot, chatId: number, messageIds: number[]) => {
@@ -52,7 +71,10 @@ const deleteSuccessMessage = (bot: TelegramBot, chatId: number, messageId: numbe
   }, delay);
 };
 
-export const initTelegramBot = (token: string): TelegramBot => {
+export const initTelegramBot = async (token: string): Promise<TelegramBot> => {
+  // Initialize processed messages table for multi-instance deduplication
+  await initProcessedMessagesTable();
+  
   // Prevent multiple bot instances
   if (bot) {
     console.log('Bot already initialized, stopping previous instance');
@@ -81,18 +103,25 @@ export const initTelegramBot = (token: string): TelegramBot => {
     }
   });
 
-  // Helper to prevent duplicate message processing
-  const isProcessed = (messageId: number): boolean => {
-    if (processedMessages.has(messageId)) {
-      return true;
+  // Helper to prevent duplicate message processing (database-based for multi-instance support)
+  const isProcessed = async (messageId: number): Promise<boolean> => {
+    try {
+      // Try to insert - if it succeeds, message hasn't been processed
+      // If it fails due to conflict, message was already processed
+      const result = await pool.query(
+        `INSERT INTO telegram_processed_messages (message_id) 
+         VALUES ($1) 
+         ON CONFLICT (message_id) DO NOTHING
+         RETURNING message_id`,
+        [messageId]
+      );
+      // If no row returned, it means conflict (already processed)
+      return result.rows.length === 0;
+    } catch (error) {
+      // On error, assume not processed to avoid blocking messages
+      console.error('Error checking processed message:', error);
+      return false;
     }
-    processedMessages.add(messageId);
-    // Clean up old messages (keep last 1000)
-    if (processedMessages.size > 1000) {
-      const arr = Array.from(processedMessages);
-      arr.slice(0, 500).forEach(id => processedMessages.delete(id));
-    }
-    return false;
   };
 
   // Helper function to check if user is authenticated
@@ -140,7 +169,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
 
   // /start - 시작 메시지
   bot.onText(/\/start/, async (msg) => {
-    if (isProcessed(msg.message_id)) return;
+    if (await isProcessed(msg.message_id)) return;
 
     const chatId = msg.chat.id;
     const telegramId = msg.from?.id;
@@ -183,7 +212,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
 
   // /link - 텔레그램 계정 연동 (DM only)
   bot.onText(/\/link(?:\s+(\d{6}))?/, async (msg, match) => {
-    if (isProcessed(msg.message_id)) return;
+    if (await isProcessed(msg.message_id)) return;
 
     const chatId = msg.chat.id;
     const telegramId = msg.from?.id;
@@ -248,7 +277,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
 
   // /help - 도움말
   bot.onText(/\/help/, async (msg) => {
-    if (isProcessed(msg.message_id)) return;
+    if (await isProcessed(msg.message_id)) return;
 
     const chatId = msg.chat.id;
     const telegramId = msg.from?.id;
@@ -287,8 +316,8 @@ export const initTelegramBot = (token: string): TelegramBot => {
   });
 
   // /cancel - 작업 취소
-  bot.onText(/\/cancel/, (msg) => {
-    if (isProcessed(msg.message_id)) return;
+  bot.onText(/\/cancel/, async (msg) => {
+    if (await isProcessed(msg.message_id)) return;
 
     const chatId = msg.chat.id;
     if (userStates.has(chatId)) {
@@ -301,7 +330,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
 
   // /list - 아티클 목록
   bot.onText(/\/list/, async (msg) => {
-    if (isProcessed(msg.message_id)) return;
+    if (await isProcessed(msg.message_id)) return;
 
     const chatId = msg.chat.id;
     const telegramId = msg.from?.id;
@@ -333,7 +362,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
 
   // /plan - 내 플랜 보기 (DM only)
   bot.onText(/\/plan/, async (msg) => {
-    if (isProcessed(msg.message_id)) return;
+    if (await isProcessed(msg.message_id)) return;
 
     const chatId = msg.chat.id;
     const telegramId = msg.from?.id;
@@ -403,7 +432,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
 
   // /n - 새 아티클 추가 (interactive)
   bot.onText(/\/n$/, async (msg) => {
-    if (isProcessed(msg.message_id)) return;
+    if (await isProcessed(msg.message_id)) return;
 
     const chatId = msg.chat.id;
     const telegramId = msg.from?.id;
@@ -428,7 +457,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
 
   // /web3 - Forward message to web3 topic only (no database save)
   bot.onText(/\/web3$/, async (msg) => {
-    if (isProcessed(msg.message_id)) return;
+    if (await isProcessed(msg.message_id)) return;
 
     const chatId = msg.chat.id;
     const telegramId = msg.from?.id;
@@ -484,7 +513,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
 
   // /t - 새 태스크 추가 (interactive)
   bot.onText(/\/t$/, async (msg) => {
-    if (isProcessed(msg.message_id)) return;
+    if (await isProcessed(msg.message_id)) return;
 
     const chatId = msg.chat.id;
     const telegramId = msg.from?.id;

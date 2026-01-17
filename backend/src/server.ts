@@ -8,6 +8,7 @@ import adminRouter from './routes/admin';
 import authRouter from './routes/auth';
 import alarmRouter from './routes/alarm';
 import bettingRouter from './routes/betting';
+import blogRouter from './routes/blog';
 import { initTelegramBot, getBot } from './services/telegramBot';
 import { alarmController } from './controllers/alarmController';
 import { runInitialSetup, checkAndRunDailyRaceJob } from './jobs/dailyRaceJob';
@@ -44,6 +45,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/alarm', alarmRouter);
 app.use('/api/betting', bettingRouter);
+app.use('/api/blog', blogRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -92,7 +94,7 @@ const startServer = async () => {
     // Initialize Telegram bot if token is provided
     const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
     if (telegramToken) {
-      initTelegramBot(telegramToken);
+      await initTelegramBot(telegramToken);
       
       // Start alarm scheduler (runs every minute)
       setInterval(runAlarmScheduler, 60 * 1000);
