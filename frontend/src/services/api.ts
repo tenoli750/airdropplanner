@@ -232,7 +232,7 @@ export const adminApi = {
   },
 
   createTask: async (articleId: string, task: any): Promise<any> => {
-    const response = await api.post(`/admin/articles/${articleId}/tasks`, task);
+    const response = await api.post(`/admin/tasks`, { ...task, article_id: articleId });
     return response.data;
   },
 
