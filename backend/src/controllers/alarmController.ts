@@ -23,7 +23,7 @@ export const alarmController = {
       if (result.rows.length === 0) {
         // Return default settings if not set
         res.json({
-          enabled: false,
+          alarm_enabled: false,
           alarm_time: '09:00',
           timezone: 'Asia/Seoul',
         });
@@ -32,7 +32,7 @@ export const alarmController = {
 
       const settings = result.rows[0];
       res.json({
-        enabled: settings.enabled,
+        alarm_enabled: settings.alarm_enabled ?? settings.enabled ?? false,
         alarm_time: settings.alarm_time.substring(0, 5), // Format HH:MM
         timezone: settings.timezone,
       });
@@ -46,26 +46,27 @@ export const alarmController = {
   async updateSettings(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).userId as string;
-      const { enabled, alarm_time, timezone } = req.body;
+      const { alarm_enabled, enabled, alarm_time, timezone } = req.body;
+      const alarmEnabled = alarm_enabled ?? enabled ?? false;
 
       const result = await pool.query(
-        `INSERT INTO user_alarm_settings (user_id, enabled, alarm_time, timezone)
+        `INSERT INTO user_alarm_settings (user_id, alarm_enabled, alarm_time, timezone)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (user_id) DO UPDATE SET
-           enabled = EXCLUDED.enabled,
+           alarm_enabled = EXCLUDED.alarm_enabled,
            alarm_time = EXCLUDED.alarm_time,
            timezone = EXCLUDED.timezone,
            updated_at = CURRENT_TIMESTAMP
          RETURNING *`,
-        [userId, enabled ?? false, alarm_time ?? '09:00', timezone ?? 'Asia/Seoul']
+        [userId, alarmEnabled, alarm_time ?? '09:00', timezone ?? 'Asia/Seoul']
       );
 
       const settings = result.rows[0];
       res.json({
-        enabled: settings.enabled,
+        alarm_enabled: settings.alarm_enabled ?? settings.enabled ?? false,
         alarm_time: settings.alarm_time.substring(0, 5),
         timezone: settings.timezone,
-        message: enabled ? 'Alarm enabled' : 'Alarm disabled',
+        message: alarmEnabled ? 'Alarm enabled' : 'Alarm disabled',
       });
     } catch (error) {
       console.error('Error updating alarm settings:', error);
@@ -89,7 +90,7 @@ export const alarmController = {
       FROM user_alarm_settings uas
       JOIN users u ON uas.user_id = u.id
       JOIN telegram_links tl ON u.id = tl.user_id
-      WHERE uas.enabled = TRUE
+      WHERE (uas.alarm_enabled = TRUE OR uas.enabled = TRUE)
         AND uas.alarm_time = $1`,
       [currentTime + ':00']
     );

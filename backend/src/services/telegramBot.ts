@@ -56,8 +56,13 @@ export const initTelegramBot = (token: string): TelegramBot => {
   // Prevent multiple bot instances
   if (bot) {
     console.log('Bot already initialized, stopping previous instance');
-    bot.stopPolling();
+    try {
+      bot.stopPolling();
+    } catch (err) {
+      console.warn('Error stopping previous bot instance:', err);
+    }
   }
+  
   bot = new TelegramBot(token, {
     polling: {
       interval: 300,
@@ -68,8 +73,12 @@ export const initTelegramBot = (token: string): TelegramBot => {
     },
   });
 
-  bot.on('polling_error', (error) => {
-    console.error('Telegram polling error:', error.message);
+  bot.on('polling_error', (error: any) => {
+    // Only log non-409 errors (409 = conflict, means another instance is polling)
+    // This usually resolves automatically when the old instance stops
+    if (!error.message?.includes('409') && !error.message?.includes('terminated by other getUpdates')) {
+      console.error('Telegram polling error:', error.message);
+    }
   });
 
   // Helper to prevent duplicate message processing
