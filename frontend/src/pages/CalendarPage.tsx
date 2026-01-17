@@ -3,12 +3,23 @@ import { plansApi } from '../services/api';
 import type { CalendarTask, UserStats } from '../types';
 import { POINTS_BY_FREQUENCY } from '../types';
 
+type MobileViewMode = 'week' | 'month';
+
 const CalendarPage = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [tasks, setTasks] = useState<CalendarTask[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+  const [mobileViewMode, setMobileViewMode] = useState<MobileViewMode>('week');
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const start = new Date(now);
+    start.setDate(now.getDate() - dayOfWeek);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  });
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -91,6 +102,115 @@ const CalendarPage = () => {
     setSelectedDate(null); // Clear selection when changing months
   };
 
+  // Week navigation for mobile
+  const prevWeek = () => {
+    const newStart = new Date(currentWeekStart);
+    newStart.setDate(newStart.getDate() - 7);
+    setCurrentWeekStart(newStart);
+  };
+
+  const nextWeek = () => {
+    const newStart = new Date(currentWeekStart);
+    newStart.setDate(newStart.getDate() + 7);
+    setCurrentWeekStart(newStart);
+  };
+
+  const goToCurrentWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const start = new Date(now);
+    start.setDate(now.getDate() - dayOfWeek);
+    start.setHours(0, 0, 0, 0);
+    setCurrentWeekStart(start);
+    setSelectedDate(new Date());
+  };
+
+  // Get week days array
+  const getWeekDays = () => {
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(currentWeekStart);
+      day.setDate(currentWeekStart.getDate() + i);
+      days.push(day);
+    }
+    return days;
+  };
+
+  // Get tasks for a specific date
+  const getTasksForSpecificDate = (date: Date) => {
+    const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+    return tasks.filter((task) => {
+      if (task.completed && task.completed_at) {
+        const completedDate = task.completed_at.split('T')[0];
+        return completedDate === dateStr;
+      }
+      return false;
+    });
+  };
+
+  // Get incomplete tasks for a specific date
+  const getIncompleteTasksForSpecificDate = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+
+    if (checkDate >= today) return [];
+
+    return tasks.filter((task) => {
+      if (task.completed) return false;
+
+      const addedDate = new Date(task.added_at);
+      addedDate.setHours(0, 0, 0, 0);
+
+      if (addedDate > checkDate) return false;
+
+      if (task.frequency === 'daily') return true;
+      if (task.frequency === 'weekly') {
+        return checkDate.getDay() === 1;
+      }
+      return task.frequency === 'one-time';
+    });
+  };
+
+  // Check if two dates are the same day
+  const isSameDay = (date1: Date | null, date2: Date) => {
+    if (!date1) return false;
+    return (
+      date1.getDate() === date2.getDate() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getFullYear() === date2.getFullYear()
+    );
+  };
+
+  // Check if a date is today
+  const isDateToday = (date: Date) => {
+    const today = new Date();
+    return isSameDay(date, today);
+  };
+
+  // Check if current week contains today
+  const isCurrentWeek = () => {
+    const today = new Date();
+    const weekEnd = new Date(currentWeekStart);
+    weekEnd.setDate(currentWeekStart.getDate() + 6);
+    return today >= currentWeekStart && today <= weekEnd;
+  };
+
+  // Format week range string
+  const getWeekRangeString = () => {
+    const weekEnd = new Date(currentWeekStart);
+    weekEnd.setDate(currentWeekStart.getDate() + 6);
+
+    const startMonth = currentWeekStart.getMonth() + 1;
+    const endMonth = weekEnd.getMonth() + 1;
+
+    if (startMonth === endMonth) {
+      return `${startMonth}월 ${currentWeekStart.getDate()}일 - ${weekEnd.getDate()}일`;
+    }
+    return `${startMonth}월 ${currentWeekStart.getDate()}일 - ${endMonth}월 ${weekEnd.getDate()}일`;
+  };
+
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
@@ -99,11 +219,12 @@ const CalendarPage = () => {
   const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
   const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 
+  // Get tasks for selected date (works for both week and month views)
   const selectedDateTasks = selectedDate
-    ? getTasksForDate(selectedDate.getDate())
+    ? getTasksForSpecificDate(selectedDate)
     : [];
   const selectedDateMissed = selectedDate
-    ? getIncompleteTasksForDate(selectedDate.getDate())
+    ? getIncompleteTasksForSpecificDate(selectedDate)
     : [];
 
   const today = new Date();
@@ -144,189 +265,301 @@ const CalendarPage = () => {
       {/* Mobile Calendar - Only visible on mobile */}
       <div className="block md:hidden">
         <div className="glass rounded-2xl p-3 space-y-3">
-          {/* Mobile Month Navigation */}
-          <div className="flex items-center justify-center gap-3">
+          {/* View Mode Toggle */}
+          <div className="flex items-center justify-center gap-2">
             <button
-              onClick={prevMonth}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center"
-              aria-label="이전 달"
+              onClick={() => setMobileViewMode('week')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                mobileViewMode === 'week'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
             >
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
+              주간
             </button>
-            <h2 className="text-lg font-bold text-gray-800 min-w-0 flex-shrink">
-              {year}년 {monthNames[month - 1]}
-            </h2>
             <button
-              onClick={nextMonth}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center"
-              aria-label="다음 달"
+              onClick={() => setMobileViewMode('month')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                mobileViewMode === 'month'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
             >
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+              월간
             </button>
-            {!isCurrentMonth && (
-              <button
-                onClick={() => setCurrentDate(new Date())}
-                className="ml-auto px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                오늘
-              </button>
-            )}
           </div>
 
-          {/* Mobile Week Days Header */}
-          <div className="grid grid-cols-7 gap-0.5 mb-1">
-            {weekDays.map((day, i) => (
-              <div
-                key={day}
-                className={`text-center text-[10px] font-medium py-1 ${
-                  i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-600'
-                }`}
-              >
-                {day}
-              </div>
-            ))}
-          </div>
-
-          {/* Mobile Calendar Grid - Compact Square */}
-          <div className="grid grid-cols-7 gap-0.5">
-            {emptyDays.map((_, i) => (
-              <div key={`empty-${i}`} className="aspect-square"></div>
-            ))}
-            {days.map((day) => {
-              const completedTasks = getTasksForDate(day);
-              const missedTasks = getIncompleteTasksForDate(day);
-              const isToday =
-                today.getDate() === day &&
-                today.getMonth() + 1 === month &&
-                today.getFullYear() === year;
-              const isSelected =
-                selectedDate?.getDate() === day &&
-                selectedDate?.getMonth() + 1 === month &&
-                selectedDate?.getFullYear() === year;
-              const dayOfWeek = new Date(year, month - 1, day).getDay();
-              const taskCount = completedTasks.length + missedTasks.length;
-
-              return (
-                <div
-                  key={day}
-                  onClick={() => setSelectedDate(new Date(year, month - 1, day))}
-                  className={`aspect-square p-0.5 sm:p-1 border rounded-lg cursor-pointer transition-all min-w-0 overflow-hidden relative ${
-                    isToday
-                      ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200'
-                      : isSelected
-                      ? 'border-indigo-400 bg-indigo-50'
-                      : 'border-gray-100 hover:border-gray-300'
-                  }`}
+          {/* Week View Mode */}
+          {mobileViewMode === 'week' && (
+            <>
+              {/* Week Navigation */}
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  onClick={prevWeek}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label="이전 주"
                 >
+                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <div className="text-center flex-1">
+                  <h2 className="text-sm font-bold text-gray-800">{getWeekRangeString()}</h2>
+                  <p className="text-[10px] text-gray-500">{currentWeekStart.getFullYear()}년</p>
+                </div>
+                <button
+                  onClick={nextWeek}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label="다음 주"
+                >
+                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                {!isCurrentWeek() && (
+                  <button
+                    onClick={goToCurrentWeek}
+                    className="px-2 py-1 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition-colors font-medium"
+                  >
+                    오늘
+                  </button>
+                )}
+              </div>
+
+              {/* Horizontal Week Strip */}
+              <div className="flex gap-1 overflow-x-auto scrollbar-hide py-1">
+                {getWeekDays().map((date, i) => {
+                  const completedTasks = getTasksForSpecificDate(date);
+                  const missedTasks = getIncompleteTasksForSpecificDate(date);
+                  const isToday = isDateToday(date);
+                  const isSelected = isSameDay(selectedDate, date);
+                  const taskCount = completedTasks.length + missedTasks.length;
+                  const hasCompleted = completedTasks.length > 0;
+                  const hasMissed = missedTasks.length > 0;
+
+                  return (
+                    <div
+                      key={i}
+                      onClick={() => setSelectedDate(date)}
+                      className={`flex-1 min-w-[44px] py-2 px-1 rounded-xl cursor-pointer transition-all text-center ${
+                        isToday
+                          ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-lg'
+                          : isSelected
+                          ? 'bg-indigo-100 text-indigo-800'
+                          : 'bg-gray-50 hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      <div className={`text-[10px] font-medium ${isToday ? 'text-indigo-100' : 'text-gray-400'}`}>
+                        {weekDays[i]}
+                      </div>
+                      <div className={`text-lg font-bold ${isToday ? 'text-white' : ''}`}>
+                        {date.getDate()}
+                      </div>
+                      {/* Task indicator dots */}
+                      <div className="flex justify-center gap-0.5 mt-1 min-h-[6px]">
+                        {hasCompleted && (
+                          <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-green-300' : 'bg-green-500'}`}></div>
+                        )}
+                        {hasMissed && (
+                          <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-red-300' : 'bg-red-400'}`}></div>
+                        )}
+                        {taskCount > 2 && (
+                          <span className={`text-[8px] ${isToday ? 'text-indigo-200' : 'text-gray-400'}`}>
+                            +{taskCount - 2}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Mini Legend */}
+              <div className="flex items-center justify-center gap-3 text-[10px] text-gray-500">
+                <div className="flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                  <span>완료</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-400"></div>
+                  <span>미완료</span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Month View Mode */}
+          {mobileViewMode === 'month' && (
+            <>
+              {/* Mobile Month Navigation */}
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  onClick={prevMonth}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label="이전 달"
+                >
+                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <div className="text-center flex-1">
+                  <h2 className="text-sm font-bold text-gray-800">{year}년 {monthNames[month - 1]}</h2>
+                </div>
+                <button
+                  onClick={nextMonth}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label="다음 달"
+                >
+                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                {!isCurrentMonth && (
+                  <button
+                    onClick={() => setCurrentDate(new Date())}
+                    className="px-2 py-1 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition-colors font-medium"
+                  >
+                    오늘
+                  </button>
+                )}
+              </div>
+
+              {/* Mobile Week Days Header */}
+              <div className="flex justify-between">
+                {weekDays.map((day, i) => (
                   <div
-                    className={`text-[11px] sm:text-xs font-medium mb-0.5 text-center ${
-                      dayOfWeek === 0
-                        ? 'text-red-500'
-                        : dayOfWeek === 6
-                        ? 'text-blue-500'
-                        : 'text-gray-700'
+                    key={day}
+                    className={`flex-1 text-center text-[10px] font-medium py-1 ${
+                      i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'
                     }`}
                   >
                     {day}
                   </div>
-                  {taskCount > 0 && (
-                    <div className="flex items-center justify-center gap-0.5 flex-wrap">
-                      {completedTasks.slice(0, 3).map((task, i) => (
-                        <div
-                          key={i}
-                          className={`w-1 h-1 rounded-full ${
-                            task.frequency === 'daily'
-                              ? 'bg-green-500'
-                              : task.frequency === 'weekly'
-                              ? 'bg-blue-500'
-                              : 'bg-purple-500'
-                          }`}
-                        />
-                      ))}
-                      {missedTasks.slice(0, 3 - completedTasks.length).map((_task, i) => (
-                        <div
-                          key={`missed-${i}`}
-                          className="w-1 h-1 rounded-full bg-red-400"
-                        />
-                      ))}
-                      {taskCount > 3 && (
-                        <div className="text-[8px] text-gray-400">+{taskCount - 3}</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                ))}
+              </div>
 
-          {/* Mobile Legend */}
-          <div className="flex items-center justify-center gap-2 mt-2 text-[10px] text-gray-600 flex-wrap">
-            <div className="flex items-center gap-0.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-              <span>Daily</span>
-            </div>
-            <div className="flex items-center gap-0.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-              <span>Weekly</span>
-            </div>
-            <div className="flex items-center gap-0.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
-              <span>One-time</span>
-            </div>
-            <div className="flex items-center gap-0.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-400"></div>
-              <span>Missed</span>
-            </div>
-          </div>
+              {/* Mobile Calendar Grid - Compact Horizontal Fit */}
+              <div className="space-y-1">
+                {(() => {
+                  const weeks = [];
+                  const allDays = [...emptyDays.map(() => null), ...days];
+                  for (let i = 0; i < allDays.length; i += 7) {
+                    weeks.push(allDays.slice(i, i + 7));
+                  }
+                  return weeks.map((week, weekIndex) => (
+                    <div key={weekIndex} className="flex justify-between gap-1">
+                      {week.map((day, dayIndex) => {
+                        if (day === null) {
+                          return <div key={`empty-${dayIndex}`} className="flex-1 min-w-[36px] h-[44px]"></div>;
+                        }
+                        const completedTasks = getTasksForDate(day);
+                        const missedTasks = getIncompleteTasksForDate(day);
+                        const isToday =
+                          today.getDate() === day &&
+                          today.getMonth() + 1 === month &&
+                          today.getFullYear() === year;
+                        const isSelected =
+                          selectedDate?.getDate() === day &&
+                          selectedDate?.getMonth() + 1 === month &&
+                          selectedDate?.getFullYear() === year;
+                        const hasCompleted = completedTasks.length > 0;
+                        const hasMissed = missedTasks.length > 0;
+
+                        return (
+                          <div
+                            key={day}
+                            onClick={() => setSelectedDate(new Date(year, month - 1, day))}
+                            className={`flex-1 min-w-[36px] h-[44px] rounded-lg cursor-pointer transition-all flex flex-col items-center justify-center ${
+                              isToday
+                                ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-md'
+                                : isSelected
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : 'bg-gray-50 hover:bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            <div className={`text-sm font-bold ${isToday ? 'text-white' : ''}`}>
+                              {day}
+                            </div>
+                            <div className="flex justify-center gap-0.5 min-h-[6px]">
+                              {hasCompleted && (
+                                <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-green-300' : 'bg-green-500'}`}></div>
+                              )}
+                              {hasMissed && (
+                                <div className={`w-1.5 h-1.5 rounded-full ${isToday ? 'bg-red-300' : 'bg-red-400'}`}></div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {/* Fill remaining slots if week is incomplete */}
+                      {week.length < 7 && Array.from({ length: 7 - week.length }).map((_, i) => (
+                        <div key={`fill-${i}`} className="flex-1 min-w-[36px] h-[44px]"></div>
+                      ))}
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              {/* Mini Legend */}
+              <div className="flex items-center justify-center gap-3 text-[10px] text-gray-500">
+                <div className="flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                  <span>완료</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-400"></div>
+                  <span>미완료</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Desktop Calendar - Only visible on desktop */}
-      <div className="hidden md:block glass rounded-2xl p-4 sm:p-6">
+      <div className="hidden md:block glass rounded-2xl p-6">
         {/* Month Navigation Header */}
-        <div className="flex items-center justify-center gap-3 mb-4">
+        <div className="flex items-center justify-between mb-6">
           <button
             onClick={prevMonth}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+            className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
             aria-label="이전 달"
           >
             <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 min-w-0 flex-shrink">
-            {year}년 {monthNames[month - 1]}
-          </h2>
-          <button
-            onClick={nextMonth}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-            aria-label="다음 달"
-          >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-          {!isCurrentMonth && (
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-800">{year}년 {monthNames[month - 1]}</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            {!isCurrentMonth && (
+              <button
+                onClick={() => setCurrentDate(new Date())}
+                className="px-3 py-1.5 text-sm bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition-colors font-medium"
+              >
+                오늘
+              </button>
+            )}
             <button
-              onClick={() => setCurrentDate(new Date())}
-              className="ml-auto px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              onClick={nextMonth}
+              className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+              aria-label="다음 달"
             >
-              오늘
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </button>
-          )}
+          </div>
         </div>
 
         {/* Week Days Header */}
-        <div className="grid grid-cols-7 gap-1 mb-2">
+        <div className="flex justify-between mb-3">
           {weekDays.map((day, i) => (
             <div
               key={day}
-              className={`text-center text-xs sm:text-sm font-medium py-2 ${
-                i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-600'
+              className={`flex-1 text-center text-sm font-medium py-2 ${
+                i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'
               }`}
             >
               {day}
@@ -334,96 +567,83 @@ const CalendarPage = () => {
           ))}
         </div>
 
-        {/* Calendar Grid - Square */}
-        <div className="grid grid-cols-7 gap-1 aspect-square">
-          {emptyDays.map((_, i) => (
-            <div key={`empty-${i}`} className="aspect-square"></div>
-          ))}
-          {days.map((day) => {
-            const completedTasks = getTasksForDate(day);
-            const missedTasks = getIncompleteTasksForDate(day);
-            const isToday =
-              today.getDate() === day &&
-              today.getMonth() + 1 === month &&
-              today.getFullYear() === year;
-            const isSelected =
-              selectedDate?.getDate() === day &&
-              selectedDate?.getMonth() + 1 === month &&
-              selectedDate?.getFullYear() === year;
-            const dayOfWeek = new Date(year, month - 1, day).getDay();
+        {/* Calendar Grid - Compact Horizontal Fit */}
+        <div className="space-y-2">
+          {(() => {
+            const weeks = [];
+            const allDays = [...emptyDays.map(() => null), ...days];
+            for (let i = 0; i < allDays.length; i += 7) {
+              weeks.push(allDays.slice(i, i + 7));
+            }
+            return weeks.map((week, weekIndex) => (
+              <div key={weekIndex} className="flex justify-between gap-2">
+                {week.map((day, dayIndex) => {
+                  if (day === null) {
+                    return <div key={`empty-${dayIndex}`} className="flex-1 h-[72px]"></div>;
+                  }
+                  const completedTasks = getTasksForDate(day);
+                  const missedTasks = getIncompleteTasksForDate(day);
+                  const isToday =
+                    today.getDate() === day &&
+                    today.getMonth() + 1 === month &&
+                    today.getFullYear() === year;
+                  const isSelected =
+                    selectedDate?.getDate() === day &&
+                    selectedDate?.getMonth() + 1 === month &&
+                    selectedDate?.getFullYear() === year;
+                  const hasCompleted = completedTasks.length > 0;
+                  const hasMissed = missedTasks.length > 0;
+                  const taskCount = completedTasks.length + missedTasks.length;
 
-            return (
-              <div
-                key={day}
-                onClick={() => setSelectedDate(new Date(year, month - 1, day))}
-                className={`aspect-square p-1 sm:p-2 border rounded-lg cursor-pointer transition-all min-w-0 overflow-hidden ${
-                  isToday
-                    ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200'
-                    : isSelected
-                    ? 'border-indigo-400 bg-indigo-50'
-                    : 'border-gray-100 hover:border-gray-300'
-                }`}
-              >
-                <div
-                  className={`text-xs sm:text-sm font-medium mb-1 truncate ${
-                    dayOfWeek === 0
-                      ? 'text-red-500'
-                      : dayOfWeek === 6
-                      ? 'text-blue-500'
-                      : 'text-gray-700'
-                  }`}
-                >
-                  {day}
-                </div>
-                <div className="flex flex-wrap gap-0.5 justify-center">
-                  {completedTasks.slice(0, 4).map((task, i) => (
+                  return (
                     <div
-                      key={i}
-                      className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full flex-shrink-0 ${
-                        task.frequency === 'daily'
-                          ? 'bg-green-500'
-                          : task.frequency === 'weekly'
-                          ? 'bg-blue-500'
-                          : 'bg-purple-500'
+                      key={day}
+                      onClick={() => setSelectedDate(new Date(year, month - 1, day))}
+                      className={`flex-1 h-[72px] rounded-xl cursor-pointer transition-all flex flex-col items-center justify-center ${
+                        isToday
+                          ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-200'
+                          : isSelected
+                          ? 'bg-indigo-100 text-indigo-800 ring-2 ring-indigo-300'
+                          : 'bg-gray-50 hover:bg-gray-100 text-gray-700'
                       }`}
-                      title={task.task_title}
-                    />
-                  ))}
-                  {missedTasks.slice(0, 4 - completedTasks.length).map((task, i) => (
-                    <div
-                      key={`missed-${i}`}
-                      className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-red-400 flex-shrink-0"
-                      title={`Missed: ${task.task_title}`}
-                    />
-                  ))}
-                </div>
-                {completedTasks.length + missedTasks.length > 4 && (
-                  <div className="text-[10px] text-gray-400 text-center mt-0.5">
-                    +{completedTasks.length + missedTasks.length - 4}
-                  </div>
-                )}
+                    >
+                      <div className={`text-lg font-bold ${isToday ? 'text-white' : ''}`}>
+                        {day}
+                      </div>
+                      <div className="flex justify-center gap-1 mt-1 min-h-[10px]">
+                        {hasCompleted && (
+                          <div className={`w-2 h-2 rounded-full ${isToday ? 'bg-green-300' : 'bg-green-500'}`}></div>
+                        )}
+                        {hasMissed && (
+                          <div className={`w-2 h-2 rounded-full ${isToday ? 'bg-red-300' : 'bg-red-400'}`}></div>
+                        )}
+                        {taskCount > 2 && (
+                          <span className={`text-xs font-medium ${isToday ? 'text-indigo-200' : 'text-gray-400'}`}>
+                            +{taskCount - 2}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Fill remaining slots if week is incomplete */}
+                {week.length < 7 && Array.from({ length: 7 - week.length }).map((_, i) => (
+                  <div key={`fill-${i}`} className="flex-1 h-[72px]"></div>
+                ))}
               </div>
-            );
-          })}
+            ));
+          })()}
         </div>
 
         {/* Legend */}
-        <div className="flex items-center justify-center gap-3 sm:gap-4 mt-4 text-xs text-gray-600 flex-wrap">
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-green-500"></div>
-            <span>Daily</span>
+        <div className="flex items-center justify-center gap-6 mt-6 text-sm text-gray-500">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            <span>완료</span>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-            <span>Weekly</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-            <span>One-time</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-red-400"></div>
-            <span>Missed</span>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-red-400"></div>
+            <span>미완료</span>
           </div>
         </div>
       </div>

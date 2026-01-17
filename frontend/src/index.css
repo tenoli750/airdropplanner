@@ -679,6 +679,16 @@ nav a[href="/"] span {
   background: linear-gradient(135deg, #4f46e5, #7c3aed);
 }
 
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Input styles */
 input[type="number"] {
   -moz-appearance: textfield;
