@@ -293,99 +293,90 @@ const PlanPage = () => {
           return (
             <div
               key={plan.id}
-              className={`glass rounded-xl border-l-4 ${styles.border} p-4 sm:p-5 ${
+              className={`bg-white rounded-lg border border-gray-200 border-l-4 ${styles.border} p-4 hover:shadow-md transition-shadow ${
                 plan.completed ? 'opacity-75' : ''
-              } card-hover`}
+              }`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 flex-1 min-w-0">
-                  <button
-                    onClick={() => plan.completed ? handleUncompleteTask(plan.task_id) : openCompleteModal(plan.task_id)}
-                    className={`mt-0.5 w-5 h-5 sm:w-6 sm:h-6 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-                      plan.completed
-                        ? 'bg-green-500 border-green-500 text-white'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                  >
-                    {plan.completed && (
-                      <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fillRule="evenodd"
-                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    )}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    {/* Task Title - Main heading */}
+              <div className="flex items-center justify-between gap-4">
+                {/* Left: Checkbox */}
+                <button
+                  onClick={() => plan.completed ? handleUncompleteTask(plan.task_id) : openCompleteModal(plan.task_id)}
+                  className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                    plan.completed
+                      ? 'bg-green-500 border-green-500 text-white'
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  {plan.completed && (
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  )}
+                </button>
+
+                {/* Center: Task Info - Horizontal Layout */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
                     <h3
-                      className={`text-base sm:text-lg font-semibold mb-2 break-words ${
+                      className={`font-semibold text-base ${
                         plan.completed ? 'text-gray-500 line-through' : 'text-gray-900'
                       }`}
                     >
                       {plan.task.title}
                     </h3>
-                    
-                    {/* Badges Row */}
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${styles.badge}`}>
-                        {plan.task.frequency === 'daily' ? '🟢 Daily' : plan.task.frequency === 'weekly' ? '🔵 Weekly' : '🟣 One-time'}
-                      </span>
-                      <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-700">
-                        +{points} 포인트
-                      </span>
-                    </div>
-                    
-                    {/* Project and Article Info */}
-                    <div className="text-sm text-gray-600 mb-2 break-words">
-                      <span className="font-medium text-gray-700">{plan.article.project_name}</span>
-                      {plan.article.title && (
-                        <>
-                          <span className="mx-2 text-gray-400">•</span>
-                          <span>{plan.article.title}</span>
-                        </>
-                      )}
-                    </div>
-                    
-                    {/* Task Description */}
-                    {plan.task.description && (
-                      <p className="text-sm text-gray-600 mb-2 break-words">{plan.task.description}</p>
-                    )}
-                    
-                    {/* Cost Info */}
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${styles.badge} whitespace-nowrap`}>
+                      {plan.task.frequency}
+                    </span>
+                    <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-700 whitespace-nowrap">
+                      +{points}p
+                    </span>
                     {plan.completed && plan.cost && (
-                      <p className="text-sm text-rose-600 font-medium mb-2">
-                        💰 비용: {formatCurrency(plan.cost)}
-                      </p>
-                    )}
-                    
-                    {/* Link */}
-                    {plan.task.link_url && (
-                      <a
-                        href={plan.task.link_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 mt-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                          />
-                        </svg>
-                        링크 열기
-                      </a>
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-rose-100 text-rose-700 whitespace-nowrap">
+                        비용: {formatCurrency(plan.cost)}
+                      </span>
                     )}
                   </div>
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                    <span className="font-medium text-gray-700">{plan.article.project_name}</span>
+                    <span className="text-gray-400">•</span>
+                    <span className="truncate">{plan.article.title}</span>
+                    {plan.task.link_url && (
+                      <>
+                        <span className="text-gray-400">•</span>
+                        <a
+                          href={plan.task.link_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 whitespace-nowrap"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                            />
+                          </svg>
+                          링크
+                        </a>
+                      </>
+                    )}
+                  </div>
+                  {plan.task.description && (
+                    <p className="text-sm text-gray-500 mt-1 line-clamp-1">{plan.task.description}</p>
+                  )}
                 </div>
+
+                {/* Right: Delete Button */}
                 <button
                   onClick={() => handleRemoveFromPlan(plan.task_id)}
-                  className="text-gray-400 hover:text-red-500 transition-colors p-1.5 flex-shrink-0"
-                  title="플랜에서 제거"
-                  aria-label="Remove from plan"
+                  className="text-gray-400 hover:text-red-500 transition-colors p-2 flex-shrink-0"
+                  title="Remove from plan"
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
