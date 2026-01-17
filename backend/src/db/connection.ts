@@ -7,13 +7,6 @@ import * as dns from 'dns';
 // Load .env file only if it exists (won't override existing env vars)
 dotenv.config();
 
-// Force IPv4 DNS resolution to avoid ENETUNREACH errors on Railway
-// Railway's network doesn't support IPv6, so we need to prefer IPv4
-if (dns.setDefaultResultOrder) {
-  dns.setDefaultResultOrder('ipv4first');
-  console.log('DNS resolution set to prefer IPv4');
-}
-
 // Validate DATABASE_URL is set
 const dbUrl = process.env.DATABASE_URL;
 
@@ -21,6 +14,36 @@ if (!dbUrl) {
   console.error('❌ DATABASE_URL environment variable is not set!');
   console.error('   Please set DATABASE_URL in your environment variables or .env file');
   throw new Error('DATABASE_URL is required');
+}
+
+// Force IPv4 DNS resolution to avoid ENETUNREACH errors on Railway
+// Railway's network doesn't support IPv6, so we need to resolve to IPv4 explicitly
+let resolvedDbUrl = dbUrl;
+try {
+  const url = new URL(dbUrl);
+  const hostname = url.hostname;
+  
+  // Resolve hostname to IPv4 explicitly
+  const addresses = dns.getaddrinfoSync(hostname, {
+    family: 4, // IPv4 only
+    hints: dns.ADDRCONFIG,
+  });
+  
+  if (addresses && addresses.length > 0) {
+    // Replace hostname with IPv4 address in connection string
+    const ipv4Address = addresses[0];
+    resolvedDbUrl = dbUrl.replace(hostname, ipv4Address);
+    console.log(`Resolved ${hostname} to IPv4: ${ipv4Address}`);
+  } else {
+    console.warn(`⚠️  Could not resolve ${hostname} to IPv4, using original connection string`);
+  }
+} catch (error) {
+  console.warn(`⚠️  DNS resolution failed: ${error}, using original connection string`);
+  // Fallback: Try setting default result order
+  if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+    console.log('DNS resolution set to prefer IPv4 (fallback)');
+  }
 }
 
 // Check if using Supabase (connection string contains 'supabase' or 'pooler.supabase')
