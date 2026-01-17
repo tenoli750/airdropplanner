@@ -59,12 +59,12 @@ export const plansApi = {
   },
 
   completeTask: async (taskId: string, cost?: number): Promise<{ plan: UserPlan; pointsAwarded: number }> => {
-    const response = await api.patch<{ plan: UserPlan; pointsAwarded: number }>(`/plans/${taskId}/complete`, { cost });
+    const response = await api.post<{ plan: UserPlan; pointsAwarded: number }>(`/plans/${taskId}/complete`, { cost });
     return response.data;
   },
 
   uncompleteTask: async (taskId: string): Promise<{ plan: UserPlan; pointsRemoved: number }> => {
-    const response = await api.patch<{ plan: UserPlan; pointsRemoved: number }>(`/plans/${taskId}/uncomplete`);
+    const response = await api.post<{ plan: UserPlan; pointsRemoved: number }>(`/plans/${taskId}/uncomplete`);
     return response.data;
   },
 
