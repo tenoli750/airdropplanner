@@ -284,7 +284,7 @@ function AppContent() {
           />
           <Route
             path="/"
-            element={isAuthenticated ? <ArticlesPage /> : <Navigate to="/login" />}
+            element={<ArticlesPage />}
           />
           <Route
             path="/plan"
