@@ -36,7 +36,7 @@ TELEGRAM_BOT_TOKEN=your-telegram-bot-token-here
 
 ### Optional: Frontend URL (set after frontend is deployed)
 ```
-FRONTEND_URL=https://your-frontend.vercel.app
+FRONTEND_URL=https://phplanner.vercel.app
 ```
 
 ## How to Set in Railway

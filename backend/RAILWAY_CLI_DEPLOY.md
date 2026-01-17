@@ -76,7 +76,7 @@ Optional:
 railway variables set TELEGRAM_BOT_TOKEN="your-token"
 
 # Frontend URL (after frontend is deployed)
-railway variables set FRONTEND_URL="https://your-frontend.vercel.app"
+railway variables set FRONTEND_URL="https://phplanner.vercel.app"
 ```
 
 ## Step 7: Deploy

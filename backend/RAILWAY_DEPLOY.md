@@ -32,7 +32,7 @@ PORT=3001
 #### Optional Variables:
 ```
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-FRONTEND_URL=https://your-frontend.vercel.app
+FRONTEND_URL=https://phplanner.vercel.app
 ```
 
 ### 4. Configure Service Settings
