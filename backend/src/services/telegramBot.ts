@@ -1368,7 +1368,7 @@ export const initTelegramBot = (token: string): TelegramBot => {
           );
 
           // Send notification with buttons below the copied message
-          const websiteUrl = process.env.FRONTEND_URL || process.env.WEBSITE_URL || 'https://phplanner.vercel.app';
+          const websiteUrl = (process.env.FRONTEND_URL || process.env.WEBSITE_URL || 'https://phplanner.vercel.app') + '/login';
           const buttons: any[][] = [
             [{ text: '📋 플랜에 추가', callback_data: `addplan:${task.id}` }],
             [{ text: '🌐 웹사이트', url: websiteUrl }]
