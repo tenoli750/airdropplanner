@@ -23,19 +23,13 @@ try {
   const url = new URL(dbUrl);
   const hostname = url.hostname;
   
-  // Resolve hostname to IPv4 explicitly
-  const addresses = dns.getaddrinfoSync(hostname, {
-    family: 4, // IPv4 only
-    hints: dns.ADDRCONFIG,
-  });
+  // Use dns.lookup with IPv4 family to get IPv4 address
+  const ipv4Address = dns.lookupSync(hostname, { family: 4 });
   
-  if (addresses && addresses.length > 0) {
+  if (ipv4Address && typeof ipv4Address === 'string') {
     // Replace hostname with IPv4 address in connection string
-    const ipv4Address = addresses[0];
     resolvedDbUrl = dbUrl.replace(hostname, ipv4Address);
-    console.log(`Resolved ${hostname} to IPv4: ${ipv4Address}`);
-  } else {
-    console.warn(`⚠️  Could not resolve ${hostname} to IPv4, using original connection string`);
+    console.log(`✅ Resolved ${hostname} to IPv4: ${ipv4Address}`);
   }
 } catch (error) {
   console.warn(`⚠️  DNS resolution failed: ${error}, using original connection string`);
@@ -56,11 +50,9 @@ const isProduction = process.env.NODE_ENV === 'production';
 console.log(`Database URL detected: ${dbUrl.substring(0, 50)}... (Supabase: ${isSupabase}, Production: ${isProduction})`);
 
 // Parse connection string and configure SSL for Supabase
+// Use resolved URL (IPv4) instead of original to avoid IPv6 issues
 const poolConfig: any = {
-  connectionString: dbUrl,
-  // Force IPv4 to avoid ENETUNREACH errors on Railway
-  // Railway doesn't support IPv6, so we need to prefer IPv4
-  // This is done by setting the family option in Node.js dns lookup
+  connectionString: resolvedDbUrl,
 };
 
 if (isSupabase) {
