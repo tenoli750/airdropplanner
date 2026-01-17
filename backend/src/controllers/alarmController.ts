@@ -90,7 +90,7 @@ export const alarmController = {
       FROM user_alarm_settings uas
       JOIN users u ON uas.user_id = u.id
       JOIN telegram_links tl ON u.id = tl.user_id
-      WHERE (uas.alarm_enabled = TRUE OR uas.enabled = TRUE)
+      WHERE uas.alarm_enabled = TRUE
         AND uas.alarm_time = $1`,
       [currentTime + ':00']
     );
