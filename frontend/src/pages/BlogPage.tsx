@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, DragEvent } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import type { DragEvent } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -700,4 +701,5 @@ export default function BlogPage() {
     </div>
   );
 }
+
 
