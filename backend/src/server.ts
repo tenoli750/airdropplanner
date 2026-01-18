@@ -12,6 +12,7 @@ import blogRouter from './routes/blog';
 import { initTelegramBot, getBot } from './services/telegramBot';
 import { alarmController } from './controllers/alarmController';
 import { runInitialSetup, checkAndRunDailyRaceJob } from './jobs/dailyRaceJob';
+import { checkAndRunDailyTaskReset } from './jobs/dailyTaskResetJob';
 
 dotenv.config();
 
@@ -103,10 +104,14 @@ const startServer = async () => {
       console.log('Telegram bot token not provided, skipping bot initialization');
     }
 
-    // Start daily race job scheduler
+    // Start daily race job scheduler (UTC 00:00)
     runInitialSetup(); // Run setup at startup
     setInterval(checkAndRunDailyRaceJob, 60 * 1000); // Check every minute for 00:00 UTC
-    console.log('Daily race job scheduler started');
+    console.log('Daily race job scheduler started (UTC 00:00)');
+
+    // Start daily task reset scheduler (KST 00:00)
+    setInterval(checkAndRunDailyTaskReset, 60 * 1000); // Check every minute for 00:00 KST
+    console.log('Daily task reset scheduler started (KST 00:00)');
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`);

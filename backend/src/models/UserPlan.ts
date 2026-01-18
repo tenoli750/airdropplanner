@@ -108,13 +108,16 @@ export const UserPlanModel = {
   },
 
   async toggleComplete(userId: string, taskId: string): Promise<UserPlan | null> {
+    // Store completion time as current UTC timestamp
+    // Date comparisons will use KST boundaries converted to UTC
+    const now = new Date();
     const result = await pool.query(
       `UPDATE user_plans
        SET completed = NOT completed,
-           completed_at = CASE WHEN NOT completed THEN CURRENT_TIMESTAMP ELSE NULL END
+           completed_at = CASE WHEN NOT completed THEN $3 ELSE NULL END
        WHERE user_id = $1 AND task_id = $2
        RETURNING *`,
-      [userId, taskId]
+      [userId, taskId, now]
     );
     return result.rows[0] || null;
   },
@@ -151,14 +154,17 @@ export const UserPlanModel = {
       const wasCompleted = checkResult.rows[0].completed;
 
       // Update plan with completion and cost
+      // Store completion time as current UTC timestamp
+      // Date comparisons will use KST boundaries converted to UTC
+      const now = new Date();
       const updateResult = await client.query(
         `UPDATE user_plans
          SET completed = TRUE,
-             completed_at = CURRENT_TIMESTAMP,
-             cost = $3
+             completed_at = $3,
+             cost = $4
          WHERE user_id = $1 AND task_id = $2
          RETURNING *`,
-        [userId, taskId, cost ?? null]
+        [userId, taskId, now, cost ?? null]
       );
 
       // If not previously completed, award points
@@ -270,9 +276,20 @@ export const UserPlanModel = {
   },
 
   // Get calendar data (tasks by date)
+  // Dates are interpreted in KST timezone
   async getCalendarData(userId: string, year: number, month: number): Promise<any[]> {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    // Create KST date boundaries for the month
+    // Start: First day of month at 00:00:00 KST
+    // End: Last day of month at 23:59:59 KST
+    const startDateKST = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+    // Subtract 9 hours to get UTC equivalent (KST = UTC+9)
+    const startDateUTC = new Date(startDateKST.getTime() - (9 * 60 * 60 * 1000));
+    
+    // End date: last day of month at 23:59:59 KST
+    const lastDay = new Date(year, month, 0).getDate();
+    const endDateKST = new Date(Date.UTC(year, month - 1, lastDay, 23, 59, 59, 999));
+    // Subtract 9 hours to get UTC equivalent
+    const endDateUTC = new Date(endDateKST.getTime() - (9 * 60 * 60 * 1000));
 
     const result = await pool.query(
       `SELECT 
@@ -295,7 +312,7 @@ export const UserPlanModel = {
           OR (t.frequency = 'weekly' AND up.added_at <= $3)
         )
       ORDER BY up.completed_at DESC NULLS LAST`,
-      [userId, startDate, endDate]
+      [userId, startDateUTC, endDateUTC]
     );
 
     return result.rows;

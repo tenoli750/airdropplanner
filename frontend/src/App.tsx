@@ -5,6 +5,7 @@ import PlanPage from './pages/PlanPage';
 import CalendarPage from './pages/CalendarPage';
 import BettingPage from './pages/BettingPage';
 import LeaderboardPage from './pages/LeaderboardPage';
+import BlogPage from './pages/BlogPage';
 import AdminPage from './pages/AdminPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -63,6 +64,7 @@ function MobileMenu({ isOpen, onClose, user, onLogout }: {
     { path: '/calendar', icon: '📅', label: '캘린더' },
     { path: '/betting', icon: '🎲', label: '베팅' },
     { path: '/leaderboard', icon: '🏆', label: '랭킹' },
+    { path: '/blog', icon: '📰', label: '게시판' },
     { path: '/profile', icon: '👤', label: '프로필' },
   ];
 
@@ -294,6 +296,10 @@ function AppContent() {
           <Route
             path="/leaderboard"
             element={isAuthenticated ? <LeaderboardPage /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/blog"
+            element={isAuthenticated ? <BlogPage /> : <Navigate to="/login" />}
           />
           <Route
             path="/profile"

@@ -5,6 +5,30 @@ import { POINTS_BY_FREQUENCY } from '../types';
 
 type MobileViewMode = 'week' | 'month';
 
+// KST (Korean Standard Time) helper functions
+// KST = UTC+9
+const getKSTDateString = (date: Date = new Date()): string => {
+  // Convert date to KST by adding 9 hours
+  const kstMs = date.getTime() + (9 * 60 * 60 * 1000);
+  const kstDate = new Date(kstMs);
+  return `${kstDate.getUTCFullYear()}-${String(kstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(kstDate.getUTCDate()).padStart(2, '0')}`;
+};
+
+const getKSTToday = (): Date => {
+  const now = new Date();
+  const kstTodayStr = getKSTDateString(now);
+  // Create a date object representing today at midnight KST
+  // We convert to local time for comparison
+  const [year, month, day] = kstTodayStr.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const isSameDayKST = (date1: Date, date2: Date): boolean => {
+  const kst1Str = getKSTDateString(date1);
+  const kst2Str = getKSTDateString(date2);
+  return kst1Str === kst2Str;
+};
+
 const CalendarPage = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [tasks, setTasks] = useState<CalendarTask[]>([]);
@@ -65,11 +89,10 @@ const CalendarPage = () => {
 
   const getIncompleteTasksForDate = (date: number) => {
     const checkDate = new Date(year, month - 1, date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayKST = getKSTToday();
 
-    // Only show incomplete tasks for past dates
-    if (checkDate >= today) return [];
+    // Only show incomplete tasks for past dates (compare in KST)
+    if (isSameDayKST(checkDate, todayKST) || checkDate > todayKST) return [];
 
     return tasks.filter((task) => {
       if (task.completed) return false;
@@ -150,12 +173,11 @@ const CalendarPage = () => {
 
   // Get incomplete tasks for a specific date
   const getIncompleteTasksForSpecificDate = (date: Date) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayKST = getKSTToday();
     const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
 
-    if (checkDate >= today) return [];
+    // Compare in KST
+    if (isSameDayKST(checkDate, todayKST) || checkDate > todayKST) return [];
 
     return tasks.filter((task) => {
       if (task.completed) return false;
@@ -173,28 +195,28 @@ const CalendarPage = () => {
     });
   };
 
-  // Check if two dates are the same day
+  // Check if two dates are the same day (using KST)
   const isSameDay = (date1: Date | null, date2: Date) => {
     if (!date1) return false;
-    return (
-      date1.getDate() === date2.getDate() &&
-      date1.getMonth() === date2.getMonth() &&
-      date1.getFullYear() === date2.getFullYear()
-    );
+    return isSameDayKST(date1, date2);
   };
 
-  // Check if a date is today
+  // Check if a date is today (using KST)
   const isDateToday = (date: Date) => {
-    const today = new Date();
-    return isSameDay(date, today);
+    const todayKST = getKSTToday();
+    return isSameDayKST(date, todayKST);
   };
 
-  // Check if current week contains today
+  // Check if current week contains today (using KST)
   const isCurrentWeek = () => {
-    const today = new Date();
+    const todayKST = getKSTToday();
     const weekEnd = new Date(currentWeekStart);
     weekEnd.setDate(currentWeekStart.getDate() + 6);
-    return today >= currentWeekStart && today <= weekEnd;
+    // Compare dates at midnight for proper comparison
+    const weekStartMidnight = new Date(currentWeekStart);
+    weekStartMidnight.setHours(0, 0, 0, 0);
+    weekEnd.setHours(0, 0, 0, 0);
+    return todayKST >= weekStartMidnight && todayKST <= weekEnd;
   };
 
   // Format week range string
@@ -227,8 +249,8 @@ const CalendarPage = () => {
     ? getIncompleteTasksForSpecificDate(selectedDate)
     : [];
 
-  const today = new Date();
-  const isCurrentMonth = year === today.getFullYear() && month === today.getMonth() + 1;
+  const todayKST = getKSTToday();
+  const isCurrentMonth = year === todayKST.getFullYear() && month === todayKST.getMonth() + 1;
 
   if (loading) {
     return (
@@ -454,10 +476,8 @@ const CalendarPage = () => {
                         }
                         const completedTasks = getTasksForDate(day);
                         const missedTasks = getIncompleteTasksForDate(day);
-                        const isToday =
-                          today.getDate() === day &&
-                          today.getMonth() + 1 === month &&
-                          today.getFullYear() === year;
+                        const checkDate = new Date(year, month - 1, day);
+                        const isToday = isDateToday(checkDate);
                         const isSelected =
                           selectedDate?.getDate() === day &&
                           selectedDate?.getMonth() + 1 === month &&
@@ -583,10 +603,8 @@ const CalendarPage = () => {
                   }
                   const completedTasks = getTasksForDate(day);
                   const missedTasks = getIncompleteTasksForDate(day);
-                  const isToday =
-                    today.getDate() === day &&
-                    today.getMonth() + 1 === month &&
-                    today.getFullYear() === year;
+                  const checkDate = new Date(year, month - 1, day);
+                  const isToday = isDateToday(checkDate);
                   const isSelected =
                     selectedDate?.getDate() === day &&
                     selectedDate?.getMonth() + 1 === month &&

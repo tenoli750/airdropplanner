@@ -215,6 +215,16 @@ export const initializeDatabase = async (): Promise<void> => {
         UNIQUE(user_id, race_id)
       );
 
+      CREATE TABLE IF NOT EXISTS blog_posts (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        title VARCHAR(500) NOT NULL,
+        content TEXT NOT NULL,
+        image_url TEXT,
+        author_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tasks_article_id ON tasks(article_id);
       CREATE INDEX IF NOT EXISTS idx_tasks_frequency ON tasks(frequency);
       CREATE INDEX IF NOT EXISTS idx_user_plans_user_id ON user_plans(user_id);
@@ -225,6 +235,8 @@ export const initializeDatabase = async (): Promise<void> => {
       CREATE INDEX IF NOT EXISTS idx_betting_race_coins_race_id ON betting_race_coins(race_id);
       CREATE INDEX IF NOT EXISTS idx_betting_bets_user_id ON betting_bets(user_id);
       CREATE INDEX IF NOT EXISTS idx_betting_bets_race_id ON betting_bets(race_id);
+      CREATE INDEX IF NOT EXISTS idx_blog_posts_author_id ON blog_posts(author_id);
+      CREATE INDEX IF NOT EXISTS idx_blog_posts_created_at ON blog_posts(created_at DESC);
     `);
     console.log('Database schema initialized successfully');
   } catch (error) {
