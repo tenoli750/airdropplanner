@@ -9,6 +9,7 @@ import authRouter from './routes/auth';
 import alarmRouter from './routes/alarm';
 import bettingRouter from './routes/betting';
 import blogRouter from './routes/blog';
+import walletsRouter from './routes/wallets';
 import { initTelegramBot, getBot } from './services/telegramBot';
 import { alarmController } from './controllers/alarmController';
 import { runInitialSetup, checkAndRunDailyRaceJob } from './jobs/dailyRaceJob';
@@ -47,6 +48,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/alarm', alarmRouter);
 app.use('/api/betting', bettingRouter);
 app.use('/api/blog', blogRouter);
+app.use('/api/wallets', walletsRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

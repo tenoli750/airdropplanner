@@ -1,14 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import type { UserPlan, TaskFrequency, UserStats } from '../types';
-import { plansApi } from '../services/api';
+import type { UserPlan, TaskFrequency, UserStats, Wallet } from '../types';
+import { plansApi, walletsApi } from '../services/api';
 import { POINTS_BY_FREQUENCY } from '../types';
 
 type FilterType = 'all' | TaskFrequency;
-
-interface Wallet {
-  id: string;
-  name: string;
-}
 
 interface TaskWallets {
   [taskId: string]: string; // taskId -> walletId
@@ -46,14 +41,12 @@ const PlanPage = () => {
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [costInput, setCostInput] = useState('');
+  const [timeInput, setTimeInput] = useState('');
   const [completing, setCompleting] = useState(false);
   const [pointsToast, setPointsToast] = useState<{ points: number; show: boolean }>({ points: 0, show: false });
 
   // Wallet management state - per task
-  const [wallets, setWallets] = useState<Wallet[]>(() => {
-    const saved = localStorage.getItem('userWallets');
-    return saved ? JSON.parse(saved) : [{ id: '1', name: 'Wallet 1' }];
-  });
+  const [wallets, setWallets] = useState<Wallet[]>([]);
   const [taskWallets, setTaskWallets] = useState<TaskWallets>(() => {
     const saved = localStorage.getItem('taskWallets');
     return saved ? JSON.parse(saved) : {};
@@ -61,11 +54,38 @@ const PlanPage = () => {
   const [openWalletDropdown, setOpenWalletDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Save wallets to localStorage
-  useEffect(() => {
-    localStorage.setItem('userWallets', JSON.stringify(wallets));
-  }, [wallets]);
+  // Wallet edit state
+  const [editingWalletId, setEditingWalletId] = useState<string | null>(null);
+  const [editingWalletName, setEditingWalletName] = useState('');
+  const [newWalletName, setNewWalletName] = useState('');
+  const [showAddWallet, setShowAddWallet] = useState(false);
 
+  // Fetch wallets from API and ensure default wallet exists
+  useEffect(() => {
+    const fetchWallets = async () => {
+      try {
+        const data = await walletsApi.getAll();
+        // Ensure default wallet "W001" exists
+        let defaultWallet = data.find(w => w.name === 'W001');
+        if (!defaultWallet) {
+          try {
+            defaultWallet = await walletsApi.create('W001');
+            setWallets([defaultWallet, ...data]);
+          } catch (err) {
+            console.error('Failed to create default wallet:', err);
+            setWallets(data);
+          }
+        } else {
+          setWallets(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch wallets:', err);
+      }
+    };
+    fetchWallets();
+  }, []);
+
+  // Save taskWallets to localStorage
   useEffect(() => {
     localStorage.setItem('taskWallets', JSON.stringify(taskWallets));
   }, [taskWallets]);
@@ -102,15 +122,70 @@ const PlanPage = () => {
     fetchPlans();
   }, []);
 
+  // Assign default wallet "W001" to all tasks that don't have a wallet
+  useEffect(() => {
+    if (wallets.length === 0 || plans.length === 0) return;
+
+    const defaultWallet = wallets.find(w => w.name === 'W001');
+    if (!defaultWallet) return;
+
+    setTaskWallets(prev => {
+      const updatedTaskWallets: TaskWallets = { ...prev };
+      let hasChanges = false;
+
+      plans.forEach(plan => {
+        if (!updatedTaskWallets[plan.task_id]) {
+          updatedTaskWallets[plan.task_id] = defaultWallet.id;
+          hasChanges = true;
+        }
+      });
+
+      return hasChanges ? updatedTaskWallets : prev;
+    });
+  }, [wallets, plans]);
+
   // Wallet management functions
-  const addWallet = () => {
-    const newId = String(Math.max(...wallets.map(w => parseInt(w.id)), 0) + 1);
-    const newWallet: Wallet = {
-      id: newId,
-      name: `Wallet ${newId}`,
-    };
-    setWallets([...wallets, newWallet]);
-    return newId;
+  const handleAddWallet = async () => {
+    if (!newWalletName.trim() || newWalletName.length > 4) return;
+    try {
+      const wallet = await walletsApi.create(newWalletName.trim());
+      setWallets([...wallets, wallet]);
+      setNewWalletName('');
+      setShowAddWallet(false);
+    } catch (err) {
+      console.error('Failed to add wallet:', err);
+    }
+  };
+
+  const handleEditWallet = async (id: string) => {
+    if (!editingWalletName.trim() || editingWalletName.length > 4) return;
+    try {
+      const updated = await walletsApi.update(id, editingWalletName.trim());
+      setWallets(wallets.map(w => w.id === id ? updated : w));
+      setEditingWalletId(null);
+      setEditingWalletName('');
+    } catch (err) {
+      console.error('Failed to update wallet:', err);
+    }
+  };
+
+  const handleDeleteWallet = async (id: string) => {
+    try {
+      await walletsApi.delete(id);
+      setWallets(wallets.filter(w => w.id !== id));
+      // Remove from task assignments
+      setTaskWallets(prev => {
+        const newTaskWallets = { ...prev };
+        Object.keys(newTaskWallets).forEach(taskId => {
+          if (newTaskWallets[taskId] === id) {
+            delete newTaskWallets[taskId];
+          }
+        });
+        return newTaskWallets;
+      });
+    } catch (err) {
+      console.error('Failed to delete wallet:', err);
+    }
   };
 
   const selectWalletForTask = (taskId: string, walletId: string) => {
@@ -118,9 +193,14 @@ const PlanPage = () => {
     setOpenWalletDropdown(null);
   };
 
-  const addWalletAndSelectForTask = (taskId: string) => {
-    const newWalletId = addWallet();
-    selectWalletForTask(taskId, newWalletId);
+  const addWalletAndSelectForTask = async (taskId: string) => {
+    try {
+      const wallet = await walletsApi.create('W' + String(wallets.length + 1).padStart(3, '0'));
+      setWallets([...wallets, wallet]);
+      selectWalletForTask(taskId, wallet.id);
+    } catch (err) {
+      console.error('Failed to add wallet:', err);
+    }
   };
 
   const getTaskWallet = (taskId: string): Wallet | null => {
@@ -132,6 +212,11 @@ const PlanPage = () => {
   const openCompleteModal = (taskId: string) => {
     setSelectedTaskId(taskId);
     setCostInput('');
+    // Default to current time in HH:MM format
+    const now = new Date();
+    const hours = now.getHours().toString().padStart(2, '0');
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    setTimeInput(`${hours}:${minutes}`);
     setShowCompleteModal(true);
   };
 
@@ -141,7 +226,17 @@ const PlanPage = () => {
     try {
       setCompleting(true);
       const cost = costInput ? parseFloat(costInput) : undefined;
-      const result = await plansApi.completeTask(selectedTaskId, cost);
+
+      // Build completed_at timestamp from time input
+      let completedAt: string | undefined;
+      if (timeInput) {
+        const [hours, minutes] = timeInput.split(':').map(Number);
+        const now = new Date();
+        now.setHours(hours, minutes, 0, 0);
+        completedAt = now.toISOString();
+      }
+
+      const result = await plansApi.completeTask(selectedTaskId, cost, completedAt);
 
       setPlans((prev) =>
         prev.map((plan) =>
@@ -319,6 +414,129 @@ const PlanPage = () => {
         </div>
       )}
 
+      {/* Wallet Management Section */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 mb-8">
+        <h2 className="text-lg font-bold text-gray-900 mb-3">지갑 관리</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          {wallets.map((wallet) => (
+            <div
+              key={wallet.id}
+              className="flex items-center gap-2 bg-indigo-50 rounded-lg px-3 py-2"
+            >
+              {editingWalletId === wallet.id ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingWalletName}
+                    onChange={(e) => setEditingWalletName(e.target.value.slice(0, 4))}
+                    maxLength={4}
+                    className="w-16 px-2 py-1 text-sm border border-indigo-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleEditWallet(wallet.id);
+                      if (e.key === 'Escape') setEditingWalletId(null);
+                    }}
+                  />
+                  <button
+                    onClick={() => handleEditWallet(wallet.id)}
+                    className="p-1 text-green-600 hover:bg-green-100 rounded"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setEditingWalletId(null)}
+                    className="p-1 text-gray-500 hover:bg-gray-200 rounded"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm font-medium text-indigo-700">{wallet.name}</span>
+                  <button
+                    onClick={() => {
+                      setEditingWalletId(wallet.id);
+                      setEditingWalletName(wallet.name);
+                    }}
+                    className="p-1 text-indigo-500 hover:bg-indigo-100 rounded"
+                    title="Edit"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteWallet(wallet.id)}
+                    className="p-1 text-red-500 hover:bg-red-100 rounded"
+                    title="Delete"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+
+          {/* Add Wallet Button */}
+          {showAddWallet ? (
+            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+              <input
+                type="text"
+                value={newWalletName}
+                onChange={(e) => setNewWalletName(e.target.value.slice(0, 4))}
+                maxLength={4}
+                placeholder="4자"
+                className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddWallet();
+                  if (e.key === 'Escape') {
+                    setShowAddWallet(false);
+                    setNewWalletName('');
+                  }
+                }}
+              />
+              <button
+                onClick={handleAddWallet}
+                disabled={!newWalletName.trim()}
+                className="p-1 text-green-600 hover:bg-green-100 rounded disabled:opacity-50"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddWallet(false);
+                  setNewWalletName('');
+                }}
+                className="p-1 text-gray-500 hover:bg-gray-200 rounded"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddWallet(true)}
+              className="flex items-center gap-1 px-3 py-2 text-sm text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              추가
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">My Airdrop Plan</h1>
         <p className="text-gray-600">
@@ -412,25 +630,25 @@ const PlanPage = () => {
                       </svg>
                     </button>
                     {isDropdownOpen && (
-                      <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border py-1 z-50">
+                      <div className="absolute right-0 top-full mt-1 min-w-[160px] bg-white rounded-lg shadow-xl border py-1 z-50">
                         {wallets.map((wallet) => (
                           <button
                             key={wallet.id}
                             onClick={() => selectWalletForTask(plan.task_id, wallet.id)}
-                            className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between ${
+                            className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between whitespace-nowrap ${
                               taskWallet?.id === wallet.id ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-50'
                             }`}
                           >
-                            {wallet.name}
-                            {taskWallet?.id === wallet.id && <span>✓</span>}
+                            <span className="truncate">{wallet.name}</span>
+                            {taskWallet?.id === wallet.id && <span className="ml-2 flex-shrink-0">✓</span>}
                           </button>
                         ))}
                         <hr className="my-1" />
                         <button
                           onClick={() => addWalletAndSelectForTask(plan.task_id)}
-                          className="w-full px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50"
+                          className="w-full px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50 whitespace-nowrap flex items-center"
                         >
-                          + 새 지갑
+                          <span>+ 새 지갑</span>
                         </button>
                       </div>
                     )}
@@ -493,6 +711,21 @@ const PlanPage = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
             <h3 className="text-lg font-bold text-gray-900 mb-4">태스크 완료</h3>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                완료 시간
+              </label>
+              <input
+                type="time"
+                value={timeInput}
+                onChange={(e) => setTimeInput(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                태스크를 완료한 시간을 입력하세요
+              </p>
+            </div>
 
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">

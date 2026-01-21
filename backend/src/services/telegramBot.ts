@@ -315,6 +315,28 @@ export const initTelegramBot = async (token: string): Promise<TelegramBot> => {
     }
   });
 
+  // /chatinfo - Show chat ID and thread ID for setting up env vars
+  bot.onText(/\/chatinfo/, async (msg) => {
+    if (await isProcessed(msg.message_id)) return;
+
+    const chatId = msg.chat.id;
+    const threadId = msg.message_thread_id || null;
+
+    let info = `📍 *Chat Info*\n\n` +
+      `Chat ID: \`${chatId}\`\n`;
+
+    if (threadId) {
+      info += `Thread ID: \`${threadId}\`\n\n`;
+      info += `Set these in Railway:\n` +
+        `\`WEB3_TOPIC_CHAT_ID=${chatId}\`\n` +
+        `\`WEB3_TOPIC_THREAD_ID=${threadId}\``;
+    } else {
+      info += `\n⚠️ This is not a topic. Use this command inside a topic to get the Thread ID.`;
+    }
+
+    bot?.sendMessage(chatId, info, { parse_mode: 'Markdown' });
+  });
+
   // /cancel - 작업 취소
   bot.onText(/\/cancel/, async (msg) => {
     if (await isProcessed(msg.message_id)) return;

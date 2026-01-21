@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Article, UserPlan, UserStats, CalendarTask, AlarmSettings } from '../types';
+import type { Article, UserPlan, UserStats, CalendarTask, AlarmSettings, Wallet } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -58,8 +58,8 @@ export const plansApi = {
     return response.data;
   },
 
-  completeTask: async (taskId: string, cost?: number): Promise<{ plan: UserPlan; pointsAwarded: number }> => {
-    const response = await api.post<{ plan: UserPlan; pointsAwarded: number }>(`/plans/${taskId}/complete`, { cost });
+  completeTask: async (taskId: string, cost?: number, completedAt?: string): Promise<{ plan: UserPlan; pointsAwarded: number }> => {
+    const response = await api.post<{ plan: UserPlan; pointsAwarded: number }>(`/plans/${taskId}/complete`, { cost, completedAt });
     return response.data;
   },
 
@@ -113,6 +113,28 @@ export const authApi = {
 
   unlinkTelegram: async (): Promise<void> => {
     await api.delete('/auth/telegram-link');
+  },
+};
+
+// API functions for wallets
+export const walletsApi = {
+  getAll: async (): Promise<Wallet[]> => {
+    const response = await api.get<Wallet[]>('/wallets');
+    return response.data;
+  },
+
+  create: async (name: string): Promise<Wallet> => {
+    const response = await api.post<Wallet>('/wallets', { name });
+    return response.data;
+  },
+
+  update: async (id: string, name: string): Promise<Wallet> => {
+    const response = await api.put<Wallet>(`/wallets/${id}`, { name });
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/wallets/${id}`);
   },
 };
 

@@ -80,3 +80,10 @@ export const POINTS_BY_FREQUENCY: Record<TaskFrequency, number> = {
   'weekly': 500,
   'one-time': 1000,
 };
+
+export interface Wallet {
+  id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+}

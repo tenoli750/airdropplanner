@@ -111,9 +111,9 @@ export const planController = {
     try {
       const taskId = req.params.taskId as string;
       const userId = (req as any).userId as string;
-      const { cost } = req.body;
+      const { cost, completedAt } = req.body;
 
-      const result = await UserPlanModel.completeTask(userId, taskId, cost);
+      const result = await UserPlanModel.completeTask(userId, taskId, cost, completedAt);
 
       if (!result) {
         res.status(404).json({ error: 'Task not found in plan' });

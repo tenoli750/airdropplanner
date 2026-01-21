@@ -115,3 +115,4 @@ However, using the CA certificate file provides stronger security (`verify-full`
 - The connection uses system CA certificates as fallback
 - For production, set `SUPABASE_SSL_CERT_PATH` to eliminate warnings
 
+

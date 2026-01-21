@@ -225,6 +225,14 @@ export const initializeDatabase = async (): Promise<void> => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS wallets (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(4) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id);
       CREATE INDEX IF NOT EXISTS idx_tasks_article_id ON tasks(article_id);
       CREATE INDEX IF NOT EXISTS idx_tasks_frequency ON tasks(frequency);
       CREATE INDEX IF NOT EXISTS idx_user_plans_user_id ON user_plans(user_id);

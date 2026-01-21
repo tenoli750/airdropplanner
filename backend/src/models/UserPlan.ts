@@ -123,7 +123,7 @@ export const UserPlanModel = {
   },
 
   // Complete task with cost input and award points
-  async completeTask(userId: string, taskId: string, cost?: number): Promise<{ plan: UserPlan; pointsAwarded: number } | null> {
+  async completeTask(userId: string, taskId: string, cost?: number, completedAt?: string): Promise<{ plan: UserPlan; pointsAwarded: number } | null> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -154,9 +154,8 @@ export const UserPlanModel = {
       const wasCompleted = checkResult.rows[0].completed;
 
       // Update plan with completion and cost
-      // Store completion time as current UTC timestamp
-      // Date comparisons will use KST boundaries converted to UTC
-      const now = new Date();
+      // Use provided completedAt or current time
+      const completionTime = completedAt ? new Date(completedAt) : new Date();
       const updateResult = await client.query(
         `UPDATE user_plans
          SET completed = TRUE,
@@ -164,7 +163,7 @@ export const UserPlanModel = {
              cost = $4
          WHERE user_id = $1 AND task_id = $2
          RETURNING *`,
-        [userId, taskId, now, cost ?? null]
+        [userId, taskId, completionTime, cost ?? null]
       );
 
       // If not previously completed, award points
