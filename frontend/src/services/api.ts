@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Article, UserPlan, UserStats, CalendarTask, AlarmSettings, Wallet } from '../types';
+import type { Article, UserPlan, UserStats, CalendarTask, AlarmSettings, Wallet, TaskWallet } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -118,23 +118,58 @@ export const authApi = {
 
 // API functions for wallets
 export const walletsApi = {
+  // Master wallet operations
   getAll: async (): Promise<Wallet[]> => {
     const response = await api.get<Wallet[]>('/wallets');
     return response.data;
   },
 
-  create: async (name: string): Promise<Wallet> => {
-    const response = await api.post<Wallet>('/wallets', { name });
+  create: async (address: string, label?: string): Promise<Wallet> => {
+    const response = await api.post<Wallet>('/wallets', { address, label });
     return response.data;
   },
 
-  update: async (id: string, name: string): Promise<Wallet> => {
-    const response = await api.put<Wallet>(`/wallets/${id}`, { name });
+  upsert: async (address: string, label?: string): Promise<{ wallet: Wallet; created: boolean }> => {
+    const response = await api.post<{ wallet: Wallet; created: boolean }>('/wallets/upsert', { address, label });
+    return response.data;
+  },
+
+  update: async (id: string, address: string, label?: string): Promise<Wallet> => {
+    const response = await api.put<Wallet>(`/wallets/${id}`, { address, label });
     return response.data;
   },
 
   delete: async (id: string): Promise<void> => {
     await api.delete(`/wallets/${id}`);
+  },
+
+  // Task-wallet operations
+  getAllTaskWallets: async (): Promise<TaskWallet[]> => {
+    const response = await api.get<TaskWallet[]>('/wallets/task-wallets');
+    return response.data;
+  },
+
+  getWalletsForTask: async (taskId: string): Promise<TaskWallet[]> => {
+    const response = await api.get<TaskWallet[]>(`/wallets/tasks/${taskId}`);
+    return response.data;
+  },
+
+  addWalletsToTask: async (taskId: string, walletIds: string[]): Promise<TaskWallet[]> => {
+    const response = await api.post<TaskWallet[]>(`/wallets/tasks/${taskId}`, { walletIds });
+    return response.data;
+  },
+
+  createAndAddToTask: async (taskId: string, address: string, label?: string): Promise<{
+    wallet: Wallet;
+    taskWallet: TaskWallet;
+    walletCreated: boolean;
+  }> => {
+    const response = await api.post(`/wallets/tasks/${taskId}/create-and-add`, { address, label });
+    return response.data;
+  },
+
+  removeWalletFromTask: async (taskId: string, walletId: string): Promise<void> => {
+    await api.delete(`/wallets/tasks/${taskId}/${walletId}`);
   },
 };
 

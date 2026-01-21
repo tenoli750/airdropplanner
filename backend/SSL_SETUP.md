@@ -116,3 +116,4 @@ However, using the CA certificate file provides stronger security (`verify-full`
 - For production, set `SUPABASE_SSL_CERT_PATH` to eliminate warnings
 
 
+

@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef } from 'react';
-import type { UserPlan, TaskFrequency, UserStats, Wallet } from '../types';
+import { useState, useEffect } from 'react';
+import type { UserPlan, TaskFrequency, UserStats, Wallet, TaskWallet } from '../types';
 import { plansApi, walletsApi } from '../services/api';
 import { POINTS_BY_FREQUENCY } from '../types';
+import WalletModal from '../components/WalletModal';
 
 type FilterType = 'all' | TaskFrequency;
 
-interface TaskWallets {
-  [taskId: string]: string; // taskId -> walletId
+// Task-wallet assignments map: taskId -> walletIds[]
+interface TaskWalletsMap {
+  [taskId: string]: TaskWallet[];
 }
 
 const frequencyOrder: Record<TaskFrequency, number> = {
@@ -45,60 +47,36 @@ const PlanPage = () => {
   const [completing, setCompleting] = useState(false);
   const [pointsToast, setPointsToast] = useState<{ points: number; show: boolean }>({ points: 0, show: false });
 
-  // Wallet management state - per task
+  // Wallet system state (new)
   const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [taskWallets, setTaskWallets] = useState<TaskWallets>(() => {
-    const saved = localStorage.getItem('taskWallets');
-    return saved ? JSON.parse(saved) : {};
-  });
-  const [openWalletDropdown, setOpenWalletDropdown] = useState<string | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [taskWalletsMap, setTaskWalletsMap] = useState<TaskWalletsMap>({});
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [walletModalTaskId, setWalletModalTaskId] = useState<string | null>(null);
 
-  // Wallet edit state
-  const [editingWalletId, setEditingWalletId] = useState<string | null>(null);
-  const [editingWalletName, setEditingWalletName] = useState('');
-  const [newWalletName, setNewWalletName] = useState('');
-  const [showAddWallet, setShowAddWallet] = useState(false);
-
-  // Fetch wallets from API and ensure default wallet exists
+  // Fetch wallets and task-wallet assignments
   useEffect(() => {
-    const fetchWallets = async () => {
+    const fetchWalletData = async () => {
       try {
-        const data = await walletsApi.getAll();
-        // Ensure default wallet "W001" exists
-        let defaultWallet = data.find(w => w.name === 'W001');
-        if (!defaultWallet) {
-          try {
-            defaultWallet = await walletsApi.create('W001');
-            setWallets([defaultWallet, ...data]);
-          } catch (err) {
-            console.error('Failed to create default wallet:', err);
-            setWallets(data);
+        const [walletsData, taskWalletsData] = await Promise.all([
+          walletsApi.getAll(),
+          walletsApi.getAllTaskWallets(),
+        ]);
+        setWallets(walletsData);
+
+        // Group task wallets by taskId
+        const map: TaskWalletsMap = {};
+        taskWalletsData.forEach(tw => {
+          if (!map[tw.task_id]) {
+            map[tw.task_id] = [];
           }
-        } else {
-          setWallets(data);
-        }
+          map[tw.task_id].push(tw);
+        });
+        setTaskWalletsMap(map);
       } catch (err) {
-        console.error('Failed to fetch wallets:', err);
+        console.error('Failed to fetch wallet data:', err);
       }
     };
-    fetchWallets();
-  }, []);
-
-  // Save taskWallets to localStorage
-  useEffect(() => {
-    localStorage.setItem('taskWallets', JSON.stringify(taskWallets));
-  }, [taskWallets]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setOpenWalletDropdown(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    fetchWalletData();
   }, []);
 
   useEffect(() => {
@@ -122,97 +100,55 @@ const PlanPage = () => {
     fetchPlans();
   }, []);
 
-  // Assign default wallet "W001" to all tasks that don't have a wallet
-  useEffect(() => {
-    if (wallets.length === 0 || plans.length === 0) return;
+  // Get wallets for a task
+  const getTaskWallets = (taskId: string): TaskWallet[] => {
+    return taskWalletsMap[taskId] || [];
+  };
 
-    const defaultWallet = wallets.find(w => w.name === 'W001');
-    if (!defaultWallet) return;
+  // Get assigned wallet IDs for a task
+  const getAssignedWalletIds = (taskId: string): string[] => {
+    return getTaskWallets(taskId).map(tw => tw.wallet_id);
+  };
 
-    setTaskWallets(prev => {
-      const updatedTaskWallets: TaskWallets = { ...prev };
-      let hasChanges = false;
+  // Open wallet modal for a task
+  const openWalletModal = (taskId: string) => {
+    setWalletModalTaskId(taskId);
+    setShowWalletModal(true);
+  };
 
-      plans.forEach(plan => {
-        if (!updatedTaskWallets[plan.task_id]) {
-          updatedTaskWallets[plan.task_id] = defaultWallet.id;
-          hasChanges = true;
-        }
-      });
+  // Handle wallets assigned to task
+  const handleWalletsAssigned = (newTaskWallets: TaskWallet[]) => {
+    if (!walletModalTaskId) return;
 
-      return hasChanges ? updatedTaskWallets : prev;
+    setTaskWalletsMap(prev => {
+      const existing = prev[walletModalTaskId] || [];
+      const newIds = new Set(newTaskWallets.map(tw => tw.wallet_id));
+      const merged = [...existing.filter(tw => !newIds.has(tw.wallet_id)), ...newTaskWallets];
+      return { ...prev, [walletModalTaskId]: merged };
     });
-  }, [wallets, plans]);
+  };
 
-  // Wallet management functions
-  const handleAddWallet = async () => {
-    if (!newWalletName.trim() || newWalletName.length > 4) return;
+  // Handle new wallet created
+  const handleWalletCreated = (wallet: Wallet) => {
+    setWallets(prev => [...prev, wallet]);
+  };
+
+  // Remove wallet from task
+  const handleRemoveWalletFromTask = async (taskId: string, walletId: string) => {
     try {
-      const wallet = await walletsApi.create(newWalletName.trim());
-      setWallets([...wallets, wallet]);
-      setNewWalletName('');
-      setShowAddWallet(false);
+      await walletsApi.removeWalletFromTask(taskId, walletId);
+      setTaskWalletsMap(prev => ({
+        ...prev,
+        [taskId]: (prev[taskId] || []).filter(tw => tw.wallet_id !== walletId),
+      }));
     } catch (err) {
-      console.error('Failed to add wallet:', err);
+      console.error('Failed to remove wallet from task:', err);
     }
-  };
-
-  const handleEditWallet = async (id: string) => {
-    if (!editingWalletName.trim() || editingWalletName.length > 4) return;
-    try {
-      const updated = await walletsApi.update(id, editingWalletName.trim());
-      setWallets(wallets.map(w => w.id === id ? updated : w));
-      setEditingWalletId(null);
-      setEditingWalletName('');
-    } catch (err) {
-      console.error('Failed to update wallet:', err);
-    }
-  };
-
-  const handleDeleteWallet = async (id: string) => {
-    try {
-      await walletsApi.delete(id);
-      setWallets(wallets.filter(w => w.id !== id));
-      // Remove from task assignments
-      setTaskWallets(prev => {
-        const newTaskWallets = { ...prev };
-        Object.keys(newTaskWallets).forEach(taskId => {
-          if (newTaskWallets[taskId] === id) {
-            delete newTaskWallets[taskId];
-          }
-        });
-        return newTaskWallets;
-      });
-    } catch (err) {
-      console.error('Failed to delete wallet:', err);
-    }
-  };
-
-  const selectWalletForTask = (taskId: string, walletId: string) => {
-    setTaskWallets(prev => ({ ...prev, [taskId]: walletId }));
-    setOpenWalletDropdown(null);
-  };
-
-  const addWalletAndSelectForTask = async (taskId: string) => {
-    try {
-      const wallet = await walletsApi.create('W' + String(wallets.length + 1).padStart(3, '0'));
-      setWallets([...wallets, wallet]);
-      selectWalletForTask(taskId, wallet.id);
-    } catch (err) {
-      console.error('Failed to add wallet:', err);
-    }
-  };
-
-  const getTaskWallet = (taskId: string): Wallet | null => {
-    const walletId = taskWallets[taskId];
-    if (!walletId) return null;
-    return wallets.find(w => w.id === walletId) || null;
   };
 
   const openCompleteModal = (taskId: string) => {
     setSelectedTaskId(taskId);
     setCostInput('');
-    // Default to current time in HH:MM format
     const now = new Date();
     const hours = now.getHours().toString().padStart(2, '0');
     const minutes = now.getMinutes().toString().padStart(2, '0');
@@ -227,7 +163,6 @@ const PlanPage = () => {
       setCompleting(true);
       const cost = costInput ? parseFloat(costInput) : undefined;
 
-      // Build completed_at timestamp from time input
       let completedAt: string | undefined;
       if (timeInput) {
         const [hours, minutes] = timeInput.split(':').map(Number);
@@ -246,7 +181,6 @@ const PlanPage = () => {
         )
       );
 
-      // Update stats
       if (stats && result.pointsAwarded > 0) {
         setStats({
           ...stats,
@@ -255,7 +189,6 @@ const PlanPage = () => {
           completedCount: stats.completedCount + 1,
         });
 
-        // Show points toast
         setPointsToast({ points: result.pointsAwarded, show: true });
         setTimeout(() => setPointsToast({ points: 0, show: false }), 2000);
       }
@@ -285,7 +218,6 @@ const PlanPage = () => {
         )
       );
 
-      // Update stats
       if (stats) {
         setStats({
           ...stats,
@@ -303,21 +235,28 @@ const PlanPage = () => {
     try {
       await plansApi.removeTaskFromPlan(taskId);
       setPlans((prev) => prev.filter((plan) => plan.task_id !== taskId));
-      // Remove wallet assignment for this task
-      setTaskWallets(prev => {
-        const newTaskWallets = { ...prev };
-        delete newTaskWallets[taskId];
-        return newTaskWallets;
+      // Also clean up task wallets
+      setTaskWalletsMap(prev => {
+        const newMap = { ...prev };
+        delete newMap[taskId];
+        return newMap;
       });
     } catch (err) {
       console.error('Failed to remove task from plan:', err);
     }
   };
 
-  const filteredPlans = (activeFilter === 'all'
-    ? plans
-    : plans.filter((plan) => plan.task.frequency === activeFilter)
-  ).sort((a, b) => frequencyOrder[a.task.frequency] - frequencyOrder[b.task.frequency]);
+  const sortedPlans = [...plans].sort((a, b) => {
+    if (a.completed !== b.completed) {
+      return a.completed ? 1 : -1;
+    }
+    return frequencyOrder[a.task.frequency] - frequencyOrder[b.task.frequency];
+  });
+
+  const filteredPlans =
+    activeFilter === 'all'
+      ? sortedPlans
+      : sortedPlans.filter((plan) => plan.task.frequency === activeFilter);
 
   const filters: { key: FilterType; label: string; color: string }[] = [
     { key: 'all', label: 'All', color: 'gray' },
@@ -329,25 +268,17 @@ const PlanPage = () => {
   const getFilterStyles = (filter: typeof filters[0], isActive: boolean) => {
     if (isActive) {
       switch (filter.color) {
-        case 'green':
-          return 'bg-green-600 text-white';
-        case 'blue':
-          return 'bg-blue-600 text-white';
-        case 'purple':
-          return 'bg-purple-600 text-white';
-        default:
-          return 'bg-gray-600 text-white';
+        case 'green': return 'bg-green-600 text-white';
+        case 'blue': return 'bg-blue-600 text-white';
+        case 'purple': return 'bg-purple-600 text-white';
+        default: return 'bg-gray-600 text-white';
       }
     }
     switch (filter.color) {
-      case 'green':
-        return 'bg-green-100 text-green-700 hover:bg-green-200';
-      case 'blue':
-        return 'bg-blue-100 text-blue-700 hover:bg-blue-200';
-      case 'purple':
-        return 'bg-purple-100 text-purple-700 hover:bg-purple-200';
-      default:
-        return 'bg-gray-100 text-gray-700 hover:bg-gray-200';
+      case 'green': return 'bg-green-100 text-green-700 hover:bg-green-200';
+      case 'blue': return 'bg-blue-100 text-blue-700 hover:bg-blue-200';
+      case 'purple': return 'bg-purple-100 text-purple-700 hover:bg-purple-200';
+      default: return 'bg-gray-100 text-gray-700 hover:bg-gray-200';
     }
   };
 
@@ -414,129 +345,6 @@ const PlanPage = () => {
         </div>
       )}
 
-      {/* Wallet Management Section */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 mb-8">
-        <h2 className="text-lg font-bold text-gray-900 mb-3">지갑 관리</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          {wallets.map((wallet) => (
-            <div
-              key={wallet.id}
-              className="flex items-center gap-2 bg-indigo-50 rounded-lg px-3 py-2"
-            >
-              {editingWalletId === wallet.id ? (
-                <>
-                  <input
-                    type="text"
-                    value={editingWalletName}
-                    onChange={(e) => setEditingWalletName(e.target.value.slice(0, 4))}
-                    maxLength={4}
-                    className="w-16 px-2 py-1 text-sm border border-indigo-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleEditWallet(wallet.id);
-                      if (e.key === 'Escape') setEditingWalletId(null);
-                    }}
-                  />
-                  <button
-                    onClick={() => handleEditWallet(wallet.id)}
-                    className="p-1 text-green-600 hover:bg-green-100 rounded"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => setEditingWalletId(null)}
-                    className="p-1 text-gray-500 hover:bg-gray-200 rounded"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="text-sm font-medium text-indigo-700">{wallet.name}</span>
-                  <button
-                    onClick={() => {
-                      setEditingWalletId(wallet.id);
-                      setEditingWalletName(wallet.name);
-                    }}
-                    className="p-1 text-indigo-500 hover:bg-indigo-100 rounded"
-                    title="Edit"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => handleDeleteWallet(wallet.id)}
-                    className="p-1 text-red-500 hover:bg-red-100 rounded"
-                    title="Delete"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
-
-          {/* Add Wallet Button */}
-          {showAddWallet ? (
-            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-              <input
-                type="text"
-                value={newWalletName}
-                onChange={(e) => setNewWalletName(e.target.value.slice(0, 4))}
-                maxLength={4}
-                placeholder="4자"
-                className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddWallet();
-                  if (e.key === 'Escape') {
-                    setShowAddWallet(false);
-                    setNewWalletName('');
-                  }
-                }}
-              />
-              <button
-                onClick={handleAddWallet}
-                disabled={!newWalletName.trim()}
-                className="p-1 text-green-600 hover:bg-green-100 rounded disabled:opacity-50"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </button>
-              <button
-                onClick={() => {
-                  setShowAddWallet(false);
-                  setNewWalletName('');
-                }}
-                className="p-1 text-gray-500 hover:bg-gray-200 rounded"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowAddWallet(true)}
-              className="flex items-center gap-1 px-3 py-2 text-sm text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              추가
-            </button>
-          )}
-        </div>
-      </div>
-
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">My Airdrop Plan</h1>
         <p className="text-gray-600">
@@ -582,8 +390,7 @@ const PlanPage = () => {
         {filteredPlans.map((plan) => {
           const styles = frequencyStyles[plan.task.frequency];
           const points = POINTS_BY_FREQUENCY[plan.task.frequency];
-          const taskWallet = getTaskWallet(plan.task_id);
-          const isDropdownOpen = openWalletDropdown === plan.task_id;
+          const taskWallets = getTaskWallets(plan.task_id);
 
           return (
             <div
@@ -592,18 +399,88 @@ const PlanPage = () => {
                 plan.completed ? 'opacity-60' : ''
               }`}
             >
-              {/* Row 1: Title and Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                <div style={{ flex: 1 }}>
-                  <h3
-                    className={`font-bold text-base ${
-                      plan.completed ? 'text-gray-400 line-through' : 'text-gray-900'
-                    }`}
+              {/* Single row: Project | Title | Badges | Buttons */}
+              <div className="flex items-center gap-3">
+                {/* Project name */}
+                <span className="text-sm font-medium text-gray-600 whitespace-nowrap">
+                  {plan.article.project_name}
+                </span>
+                <span className="text-gray-300">|</span>
+
+                {/* Task title */}
+                <h3
+                  className={`font-bold text-base whitespace-nowrap ${
+                    plan.completed ? 'text-gray-400 line-through' : 'text-gray-900'
+                  }`}
+                >
+                  {plan.task.title}
+                </h3>
+
+                {/* Completed time */}
+                {plan.completed && plan.completed_at && (
+                  <span className="text-xs text-green-600 whitespace-nowrap">
+                    {new Date(plan.completed_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+
+                {/* Link URL */}
+                {plan.task.link_url && (
+                  <a
+                    href={plan.task.link_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:text-blue-700 transition-colors"
+                    title={plan.task.link_url}
                   >
-                    {plan.task.title}
-                  </h3>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                )}
+
+                {/* Badges */}
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${styles.badge}`}>
+                    {plan.task.frequency}
+                  </span>
+                  <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-700">
+                    +{points}p
+                  </span>
+                  {taskWallets.map(tw => (
+                    <span
+                      key={tw.id}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-indigo-100 text-indigo-700"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                      </svg>
+                      {tw.wallet?.name || tw.wallet?.address || 'N/A'}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveWalletFromTask(plan.task_id, tw.wallet_id);
+                        }}
+                        className="ml-0.5 hover:text-red-500 transition-colors"
+                        title="지갑 제거"
+                      >
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </span>
+                  ))}
+                  {plan.completed && plan.cost && (
+                    <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-rose-100 text-rose-700">
+                      {formatCurrency(plan.cost)}
+                    </span>
+                  )}
                 </div>
-                <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+
+                {/* Spacer */}
+                <div className="flex-1" />
+
+                {/* Buttons */}
+                <div className="flex items-center gap-2 flex-shrink-0">
                   <button
                     onClick={() => plan.completed ? handleUncompleteTask(plan.task_id) : openCompleteModal(plan.task_id)}
                     className={`p-2 rounded-lg ${
@@ -616,43 +493,19 @@ const PlanPage = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   </button>
-                  <div className="relative" ref={isDropdownOpen ? dropdownRef : null}>
-                    <button
-                      onClick={() => setOpenWalletDropdown(isDropdownOpen ? null : plan.task_id)}
-                      className={`p-2 rounded-lg ${
-                        taskWallet
-                          ? 'bg-indigo-500 text-white'
-                          : 'bg-gray-100 text-gray-400 hover:bg-indigo-100 hover:text-indigo-600'
-                      }`}
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                      </svg>
-                    </button>
-                    {isDropdownOpen && (
-                      <div className="absolute right-0 top-full mt-1 min-w-[160px] bg-white rounded-lg shadow-xl border py-1 z-50">
-                        {wallets.map((wallet) => (
-                          <button
-                            key={wallet.id}
-                            onClick={() => selectWalletForTask(plan.task_id, wallet.id)}
-                            className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between whitespace-nowrap ${
-                              taskWallet?.id === wallet.id ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-50'
-                            }`}
-                          >
-                            <span className="truncate">{wallet.name}</span>
-                            {taskWallet?.id === wallet.id && <span className="ml-2 flex-shrink-0">✓</span>}
-                          </button>
-                        ))}
-                        <hr className="my-1" />
-                        <button
-                          onClick={() => addWalletAndSelectForTask(plan.task_id)}
-                          className="w-full px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50 whitespace-nowrap flex items-center"
-                        >
-                          <span>+ 새 지갑</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    onClick={() => openWalletModal(plan.task_id)}
+                    className={`p-2 rounded-lg ${
+                      taskWallets.length > 0
+                        ? 'bg-indigo-500 text-white'
+                        : 'bg-gray-100 text-gray-400 hover:bg-indigo-100 hover:text-indigo-600'
+                    }`}
+                    title="지갑 관리"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                    </svg>
+                  </button>
                   <button
                     onClick={() => handleRemoveFromPlan(plan.task_id)}
                     className="p-2 rounded-lg bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-500"
@@ -664,43 +517,12 @@ const PlanPage = () => {
                 </div>
               </div>
 
-              {/* Row 2: Badges */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${styles.badge}`}>
-                  {plan.task.frequency}
-                </span>
-                <span className="px-2 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-700">
-                  +{points}p
-                </span>
-                {taskWallet && (
-                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-indigo-100 text-indigo-700">
-                    {taskWallet.name}
-                  </span>
-                )}
-                {plan.completed && plan.cost && (
-                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-rose-100 text-rose-700">
-                    {formatCurrency(plan.cost)}
-                  </span>
-                )}
-              </div>
-
-              {/* Row 3: Project Info */}
-              <div style={{ marginTop: '8px' }} className="text-sm text-gray-600">
-                <span className="font-medium">{plan.article.project_name}</span>
-                <span className="mx-2 text-gray-300">|</span>
-                <span className="text-gray-500">{plan.article.title}</span>
-                {plan.task.link_url && (
-                  <a
-                    href={plan.task.link_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="ml-2 text-indigo-600 hover:text-indigo-800"
-                  >
-                    링크 →
-                  </a>
-                )}
-              </div>
+              {/* Description */}
+              {plan.task.description && (
+                <p className="mt-2 text-sm text-gray-500">
+                  {plan.task.description}
+                </p>
+              )}
             </div>
           );
         })}
@@ -732,7 +554,7 @@ const PlanPage = () => {
                 비용 (선택사항)
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₩</span>
+                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">W</span>
                 <input
                   type="number"
                   value={costInput}
@@ -763,6 +585,23 @@ const PlanPage = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Wallet Modal */}
+      {walletModalTaskId && (
+        <WalletModal
+          isOpen={showWalletModal}
+          onClose={() => {
+            setShowWalletModal(false);
+            setWalletModalTaskId(null);
+          }}
+          taskId={walletModalTaskId}
+          existingWallets={wallets}
+          assignedWalletIds={getAssignedWalletIds(walletModalTaskId)}
+          onWalletsAssigned={handleWalletsAssigned}
+          onWalletCreated={handleWalletCreated}
+          onWalletRemoved={(walletId) => handleRemoveWalletFromTask(walletModalTaskId, walletId)}
+        />
       )}
 
       {plans.length === 0 && (
@@ -800,3 +639,4 @@ const PlanPage = () => {
 };
 
 export default PlanPage;
+

@@ -84,6 +84,18 @@ export const POINTS_BY_FREQUENCY: Record<TaskFrequency, number> = {
 export interface Wallet {
   id: string;
   user_id: string;
-  name: string;
+  name: string; // 4-character wallet identifier
   created_at: string;
+  // For backward compatibility, map name to address
+  address?: string;
+  label?: string | null;
+}
+
+export interface TaskWallet {
+  id: string;
+  task_id: string;
+  wallet_id: string;
+  user_id: string;
+  created_at: string;
+  wallet: Wallet;
 }

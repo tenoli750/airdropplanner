@@ -76,3 +76,4 @@ const applyWalletsSQL = async () => {
 
 applyWalletsSQL();
 
+
