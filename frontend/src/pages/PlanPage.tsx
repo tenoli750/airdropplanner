@@ -53,6 +53,12 @@ const PlanPage = () => {
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [walletModalTaskId, setWalletModalTaskId] = useState<string | null>(null);
 
+  // Collapsible article groups state
+  const [expandedArticles, setExpandedArticles] = useState<Set<string>>(new Set());
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Fetch wallets and task-wallet assignments
   useEffect(() => {
     const fetchWalletData = async () => {
@@ -114,6 +120,19 @@ const PlanPage = () => {
   const openWalletModal = (taskId: string) => {
     setWalletModalTaskId(taskId);
     setShowWalletModal(true);
+  };
+
+  // Toggle article expand/collapse
+  const toggleArticleExpanded = (articleId: string) => {
+    setExpandedArticles(prev => {
+      const next = new Set(prev);
+      if (next.has(articleId)) {
+        next.delete(articleId);
+      } else {
+        next.add(articleId);
+      }
+      return next;
+    });
   };
 
   // Handle wallets assigned to task
@@ -253,10 +272,34 @@ const PlanPage = () => {
     return frequencyOrder[a.task.frequency] - frequencyOrder[b.task.frequency];
   });
 
-  const filteredPlans =
-    activeFilter === 'all'
-      ? sortedPlans
-      : sortedPlans.filter((plan) => plan.task.frequency === activeFilter);
+  const filteredPlans = sortedPlans.filter((plan) => {
+    // Filter by frequency
+    if (activeFilter !== 'all' && plan.task.frequency !== activeFilter) {
+      return false;
+    }
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesTask = plan.task.title.toLowerCase().includes(query);
+      const matchesProject = plan.article.project_name.toLowerCase().includes(query);
+      const matchesArticle = plan.article.title.toLowerCase().includes(query);
+      return matchesTask || matchesProject || matchesArticle;
+    }
+    return true;
+  });
+
+  // Group plans by article
+  const groupedPlans = filteredPlans.reduce((acc, plan) => {
+    const articleId = plan.article.id;
+    if (!acc[articleId]) {
+      acc[articleId] = {
+        article: plan.article,
+        plans: [],
+      };
+    }
+    acc[articleId].plans.push(plan);
+    return acc;
+  }, {} as Record<string, { article: { id: string; title: string; project_name: string }; plans: typeof filteredPlans }>);
 
   const filters: { key: FilterType; label: string; color: string }[] = [
     { key: 'all', label: 'All', color: 'gray' },
@@ -367,163 +410,232 @@ const PlanPage = () => {
       </div>
 
       {plans.length > 0 && (
-        <div className="flex gap-2 mb-6">
-          {filters.map((filter) => (
-            <button
-              key={filter.key}
-              onClick={() => setActiveFilter(filter.key)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${getFilterStyles(
-                filter,
-                activeFilter === filter.key
-              )}`}
+        <div className="space-y-4 mb-6">
+          {/* Search Input */}
+          <div className="relative">
+            <svg
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
             >
-              {filter.label}
-              <span className="ml-1 opacity-75">
-                ({filter.key === 'all' ? plans.length : plans.filter((p) => p.task.frequency === filter.key).length})
-              </span>
-            </button>
-          ))}
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search tasks, projects, articles..."
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* Filters */}
+          <div className="flex gap-2">
+            {filters.map((filter) => (
+              <button
+                key={filter.key}
+                onClick={() => setActiveFilter(filter.key)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${getFilterStyles(
+                  filter,
+                  activeFilter === filter.key
+                )}`}
+              >
+                {filter.label}
+                <span className="ml-1 opacity-75">
+                  ({filter.key === 'all' ? plans.length : plans.filter((p) => p.task.frequency === filter.key).length})
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      <div className="space-y-3">
-        {filteredPlans.map((plan) => {
-          const styles = frequencyStyles[plan.task.frequency];
-          const points = POINTS_BY_FREQUENCY[plan.task.frequency];
-          const taskWallets = getTaskWallets(plan.task_id);
+      <div className="space-y-4">
+        {Object.values(groupedPlans).map(({ article, plans: articlePlans }) => {
+          const isExpanded = expandedArticles.has(article.id);
+          const completedInArticle = articlePlans.filter(p => p.completed).length;
+          const allCompleted = completedInArticle === articlePlans.length;
 
           return (
-            <div
-              key={plan.id}
-              className={`bg-white rounded-xl border border-gray-200 border-l-4 ${styles.border} p-4 hover:shadow-md transition-shadow ${
-                plan.completed ? 'opacity-60' : ''
+          <div key={article.id}>
+            {/* Article Header - Clickable */}
+            <button
+              onClick={() => toggleArticleExpanded(article.id)}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                allCompleted ? 'bg-green-50 hover:bg-green-100' : 'bg-red-50 hover:bg-red-100'
               }`}
             >
-              {/* Single row: Project | Title | Badges | Buttons */}
-              <div className="flex items-center gap-3">
-                {/* Project name */}
-                <span className="text-sm font-medium text-gray-600 whitespace-nowrap">
-                  {plan.article.project_name}
-                </span>
-                <span className="text-gray-300">|</span>
+              <svg
+                className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''} ${
+                  allCompleted ? 'text-green-500' : 'text-red-500'
+                }`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+              <h2 className={`font-bold text-lg ${allCompleted ? 'text-green-700' : 'text-red-700'}`}>
+                {article.project_name}
+              </h2>
+              <span className="text-gray-400">·</span>
+              <span className="text-sm text-gray-500">{article.title}</span>
+              <span className={`text-xs ml-auto ${allCompleted ? 'text-green-600' : 'text-red-600'}`}>
+                {completedInArticle}/{articlePlans.length}
+              </span>
+            </button>
 
-                {/* Task title */}
-                <h3
-                  className={`font-bold text-base whitespace-nowrap ${
-                    plan.completed ? 'text-gray-400 line-through' : 'text-gray-900'
-                  }`}
-                >
-                  {plan.task.title}
-                </h3>
+            {/* Tasks under this article - Collapsible */}
+            {isExpanded && (
+            <div className="space-y-2 mt-2 ml-2">
+              {articlePlans.map((plan) => {
+                const styles = frequencyStyles[plan.task.frequency];
+                const points = POINTS_BY_FREQUENCY[plan.task.frequency];
+                const taskWallets = getTaskWallets(plan.task_id);
 
-                {/* Completed time */}
-                {plan.completed && plan.completed_at && (
-                  <span className="text-xs text-green-600 whitespace-nowrap">
-                    {new Date(plan.completed_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                )}
-
-                {/* Link URL */}
-                {plan.task.link_url && (
-                  <a
-                    href={plan.task.link_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-500 hover:text-blue-700 transition-colors"
-                    title={plan.task.link_url}
+                return (
+                  <div
+                    key={plan.id}
+                    className={`bg-white rounded-xl border border-gray-200 border-l-4 ${styles.border} p-3 hover:shadow-md transition-shadow ${
+                      plan.completed ? 'opacity-60' : ''
+                    }`}
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </a>
-                )}
-
-                {/* Badges */}
-                <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${styles.badge}`}>
-                    {plan.task.frequency}
-                  </span>
-                  <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-700">
-                    +{points}p
-                  </span>
-                  {taskWallets.map(tw => (
-                    <span
-                      key={tw.id}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-indigo-100 text-indigo-700"
-                    >
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                      </svg>
-                      {tw.wallet?.name || tw.wallet?.address || 'N/A'}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveWalletFromTask(plan.task_id, tw.wallet_id);
-                        }}
-                        className="ml-0.5 hover:text-red-500 transition-colors"
-                        title="지갑 제거"
+                    {/* Single row: Title | Badges | Buttons */}
+                    <div className="flex items-center gap-3">
+                      {/* Task title */}
+                      <h3
+                        className={`font-bold text-base whitespace-nowrap ${
+                          plan.completed ? 'text-gray-400 line-through' : 'text-gray-900'
+                        }`}
                       >
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </span>
-                  ))}
-                  {plan.completed && plan.cost && (
-                    <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-rose-100 text-rose-700">
-                      {formatCurrency(plan.cost)}
-                    </span>
-                  )}
-                </div>
+                        {plan.task.title}
+                      </h3>
 
-                {/* Spacer */}
-                <div className="flex-1" />
+                      {/* Completed time */}
+                      {plan.completed && plan.completed_at && (
+                        <span className="text-xs text-green-600 whitespace-nowrap">
+                          {new Date(plan.completed_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
 
-                {/* Buttons */}
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => plan.completed ? handleUncompleteTask(plan.task_id) : openCompleteModal(plan.task_id)}
-                    className={`p-2 rounded-lg ${
-                      plan.completed
-                        ? 'bg-green-500 text-white'
-                        : 'bg-gray-100 text-gray-400 hover:bg-green-100 hover:text-green-600'
-                    }`}
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => openWalletModal(plan.task_id)}
-                    className={`p-2 rounded-lg ${
-                      taskWallets.length > 0
-                        ? 'bg-indigo-500 text-white'
-                        : 'bg-gray-100 text-gray-400 hover:bg-indigo-100 hover:text-indigo-600'
-                    }`}
-                    title="지갑 관리"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => handleRemoveFromPlan(plan.task_id)}
-                    className="p-2 rounded-lg bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-500"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
+                      {/* Link URL */}
+                      {plan.task.link_url && (
+                        <a
+                          href={plan.task.link_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:text-blue-700 transition-colors"
+                          title={plan.task.link_url}
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      )}
 
-              {/* Description */}
-              {plan.task.description && (
-                <p className="mt-2 text-sm text-gray-500">
-                  {plan.task.description}
-                </p>
-              )}
+                      {/* Badges */}
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${styles.badge}`}>
+                          {plan.task.frequency}
+                        </span>
+                        <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-700">
+                          +{points}p
+                        </span>
+                        {taskWallets.map(tw => (
+                          <span
+                            key={tw.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-indigo-100 text-indigo-700"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                            </svg>
+                            {tw.wallet?.name || tw.wallet?.address || 'N/A'}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveWalletFromTask(plan.task_id, tw.wallet_id);
+                              }}
+                              className="ml-0.5 hover:text-red-500 transition-colors"
+                              title="지갑 제거"
+                            >
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </span>
+                        ))}
+                        {plan.completed && plan.cost && (
+                          <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-rose-100 text-rose-700">
+                            {formatCurrency(plan.cost)}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Spacer */}
+                      <div className="flex-1" />
+
+                      {/* Buttons */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => plan.completed ? handleUncompleteTask(plan.task_id) : openCompleteModal(plan.task_id)}
+                          className={`p-2 rounded-lg ${
+                            plan.completed
+                              ? 'bg-green-500 text-white'
+                              : 'bg-gray-100 text-gray-400 hover:bg-green-100 hover:text-green-600'
+                          }`}
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => openWalletModal(plan.task_id)}
+                          className={`p-2 rounded-lg ${
+                            taskWallets.length > 0
+                              ? 'bg-indigo-500 text-white'
+                              : 'bg-gray-100 text-gray-400 hover:bg-indigo-100 hover:text-indigo-600'
+                          }`}
+                          title="지갑 관리"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleRemoveFromPlan(plan.task_id)}
+                          className="p-2 rounded-lg bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-500"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Description */}
+                    {plan.task.description && (
+                      <p className="mt-2 text-sm text-gray-500">
+                        {plan.task.description}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+            )}
+          </div>
           );
         })}
       </div>

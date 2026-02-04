@@ -23,6 +23,26 @@ interface UserState {
 
 const userStates = new Map<number, UserState>();
 
+// Store pending forward messages (message_id -> original message info)
+interface PendingForward {
+  chatId: number;
+  messageId: number;
+  promptMessageId: number;
+  timestamp: number;
+}
+const pendingForwards = new Map<string, PendingForward>();
+
+// Clean up old pending forwards (older than 5 minutes)
+const cleanupPendingForwards = () => {
+  const now = Date.now();
+  const fiveMinutes = 5 * 60 * 1000;
+  for (const [key, value] of pendingForwards.entries()) {
+    if (now - value.timestamp > fiveMinutes) {
+      pendingForwards.delete(key);
+    }
+  }
+};
+
 // Initialize processed messages table (for multi-instance deduplication)
 const initProcessedMessagesTable = async () => {
   try {
@@ -533,6 +553,52 @@ export const initTelegramBot = async (token: string): Promise<TelegramBot> => {
     }
   });
 
+  // Handle forwarded messages - show Yes/No prompt for web3 forwarding (no login required)
+  bot.on('message', async (msg) => {
+    // Only process forwarded messages in groups
+    if (msg.chat.type === 'private') return;
+    if (!msg.forward_date && !msg.forward_from && !msg.forward_from_chat) return;
+    if (await isProcessed(msg.message_id)) return;
+
+    const chatId = msg.chat.id;
+
+    // Check if web3 topic is configured
+    if (!WEB3_TOPIC_CHAT_ID || !WEB3_TOPIC_THREAD_ID) {
+      return; // Silently ignore if not configured
+    }
+
+    // Clean up old pending forwards
+    cleanupPendingForwards();
+
+    // Show Yes/No prompt in Korean
+    const promptMessage = await bot?.sendMessage(
+      chatId,
+      '📤 *전달된 메시지*\n\nWeb3 토픽에 전달하시겠습니까?',
+      {
+        parse_mode: 'Markdown',
+        reply_to_message_id: msg.message_id,
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ 예', callback_data: `fwd_web3:yes:${msg.message_id}` },
+              { text: '❌ 아니오', callback_data: `fwd_web3:no:${msg.message_id}` }
+            ]
+          ]
+        }
+      }
+    );
+
+    // Store pending forward info
+    if (promptMessage) {
+      pendingForwards.set(`${chatId}:${msg.message_id}`, {
+        chatId,
+        messageId: msg.message_id,
+        promptMessageId: promptMessage.message_id,
+        timestamp: Date.now()
+      });
+    }
+  });
+
   // /t - 새 태스크 추가 (interactive)
   bot.onText(/\/t$/, async (msg) => {
     if (await isProcessed(msg.message_id)) return;
@@ -616,6 +682,62 @@ export const initTelegramBot = async (token: string): Promise<TelegramBot> => {
     const telegramId = query.from?.id;
 
     if (!chatId || !data) return;
+
+    // Handle forwarded message web3 confirmation (no login required)
+    if (data.startsWith('fwd_web3:')) {
+      const parts = data.split(':');
+      const action = parts[1]; // 'yes' or 'no'
+      const originalMessageId = parts[2];
+      const key = `${chatId}:${originalMessageId}`;
+      const pending = pendingForwards.get(key);
+
+      if (!pending) {
+        bot?.answerCallbackQuery(query.id, { text: '요청이 만료되었습니다.' });
+        return;
+      }
+
+      if (action === 'yes') {
+        try {
+          // Forward the original message to web3 topic
+          await (bot as any)?.copyMessage(
+            WEB3_TOPIC_CHAT_ID,
+            chatId,
+            parseInt(originalMessageId),
+            { message_thread_id: WEB3_TOPIC_THREAD_ID }
+          );
+
+          // Edit prompt message to show success
+          await bot?.editMessageText(
+            '✅ Web3 토픽에 전달되었습니다.',
+            {
+              chat_id: chatId,
+              message_id: pending.promptMessageId,
+              parse_mode: 'Markdown'
+            }
+          );
+
+          // Delete the success message after 3 seconds
+          deleteSuccessMessage(bot!, chatId, pending.promptMessageId, 3000);
+
+          bot?.answerCallbackQuery(query.id, { text: '전달 완료!' });
+        } catch (error: any) {
+          console.error('Error forwarding to web3:', error.message || error);
+          bot?.answerCallbackQuery(query.id, { text: '전달 중 오류가 발생했습니다.' });
+        }
+      } else {
+        // User clicked "No" - delete the prompt message
+        try {
+          await bot?.deleteMessage(chatId, pending.promptMessageId);
+        } catch (err) {
+          // Ignore if message is already deleted
+        }
+        bot?.answerCallbackQuery(query.id);
+      }
+
+      // Clean up
+      pendingForwards.delete(key);
+      return;
+    }
 
     // Menu: Main menu
     if (data === 'menu:main') {
